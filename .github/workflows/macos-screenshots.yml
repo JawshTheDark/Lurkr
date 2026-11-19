@@ -28,7 +28,7 @@ jobs:
       - name: Launch Lurkr.app and capture screenshots
         run: |
           set -euo pipefail
-          APP_BIN=$(find release -maxdepth 4 -type f -path '*/Lurkr.app/Contents/MacOS/Lurkr' | head -n 1)
+          APP_BIN=$(find release -maxdepth 6 -type f -path '*/Lurkr.app/Contents/MacOS/Lurkr' | head -n 1)
           echo "Using app binary: $APP_BIN"
           test -x "$APP_BIN"
           node scripts/macos-screenshots.mjs "$APP_BIN" macos-screenshots
