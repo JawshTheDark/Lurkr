@@ -1,0 +1,694 @@
+/*
+ * Copyright (c) 2026 Brad Root
+ * SPDX-License-Identifier: MPL-2.0
+ */
+
+/* Defaults match the settings registry; useTheme() overwrites :root vars
+   from settings.effective() once the store loads. Changing a default here
+   without changing settingsRegistry.js will only affect the very-first paint. */
+@import "tailwindcss";
+
+:root {
+  /* Brad's iTerm theme (Monokai Pro variant): #212022 / #fcfcfa */
+  --bg: #212022;
+  --bg-soft: #2c2a2e;
+  --fg: #fcfcfa;
+  --fg-muted: #939293;
+  --accent: #a99dec;
+  --good: #b3db82;
+  --warn: #f9d978;
+  --bad: #ed6c89;
+  --border: #2c2a2e;
+
+  /* Semantic aliases for React UI components */
+  --bg-primary: var(--bg);
+  --bg-secondary: var(--bg-soft);
+  --bg-hover: color-mix(in srgb, var(--fg) 7%, transparent);
+  --text-primary: var(--fg);
+  --text-secondary: var(--fg-muted);
+  --text-muted: var(--fg-muted);
+  --link: var(--accent);
+  --nick-self: var(--fg);
+
+  /* Buffer-list state colors. Match the registry defaults so first paint is
+     consistent before settings load; useTheme() then overwrites them from
+     look.color.buffer.* once the settings store loads. */
+  --buffer-unread: var(--accent);
+  --buffer-highlight: var(--warn);
+
+  /* Member-list mode prefix colors */
+  --member-owner: #ed6c89;
+  --member-admin: #fc9867;
+  --member-op: #a99dec;
+  --member-halfop: #78dce8;
+  --member-voice: #b3db82;
+
+  --mono: 'Input Mono', 'Input', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --font-size: 14px;
+  --font-weight: 400;
+  /* Compact-layout density (#1186): rewritten live by useTheme from
+     look.message.compact.*; these are the registry defaults. */
+  --compact-group-gap: 10px;
+  --compact-line-height: 1.55;
+  --compact-indent: 1ch;
+
+  /* ----------------------------------------------------------------------
+     Internal design tokens.
+
+     Everything ABOVE this line is user-themeable: useTheme() rewrites it on
+     :root from the settings store. Everything BELOW is static — internal
+     consistency only, deliberately NOT wired into the settings registry.
+     Don't add these to COLOR_VARS / settingsRegistry; they're for us, not
+     the user.
+     ---------------------------------------------------------------------- */
+
+  /* Spacing — a 4px-derived rhythm (2px steps at the low end where the dense
+     IRC chrome needs them, 4px steps higher up). These are the values that
+     were already in use across the components; tokenizing them just stops a
+     stray 7px or 13px from sneaking in unnoticed. Use for gap / padding /
+     margin only — NOT for borders (always 1px) or one-off layout widths. */
+  --space-1: 2px;
+  --space-2: 4px;
+  --space-3: 6px;
+  --space-4: 8px;
+  --space-5: 10px;
+  --space-6: 12px;
+  --space-7: 16px;
+  --space-8: 20px;
+  --space-9: 24px;
+  --space-10: 32px;
+
+  /* z-index ladder — named by role so stacking order is legible at the call
+     site and there's one place to see the whole hierarchy. Values preserve
+     the order the app already shipped with; add new layers here rather than
+     inventing bare numbers in components.
+       base    in-flow lift (sticky headers, bg layers)
+       raised  lifts above sibling content within a component
+       modal   modal/overlay shells (AppModal, QuickSwitcher)
+       sheep   the screen mate (SheepOverlay) — in front of dialogs, under toasts and menus
+       toast   toast stack — sits above modals so notifications stay visible
+       menu    context menus
+       popover input autocomplete (NickPicker) — top of the stack */
+  --z-base: 1;
+  --z-raised: 5;
+  --z-modal: 100;
+  --z-sheep: 150;
+  --z-toast: 200;
+  --z-menu: 300;
+  --z-popover: 1000;
+
+  /* Modal/overlay scrim — the dimmed backdrop behind a full-screen overlay.
+     Currently the QuickSwitcher; AppModal uses a solid --bg backdrop, and the
+     rgba(0,0,0,*) on context menus / toasts / the nick picker are drop
+     shadows, not scrims. */
+  --scrim: rgba(0, 0, 0, 0.5);
+
+  /* Icon sizing. Icons are graphics, not text, so they're allowed to scale
+     independently of the one-font-size rule (which governs text hierarchy).
+     em-relative so they track the base size. Use on icon-only controls where
+     a glyph needs more presence than body text. */
+  --icon-md: 1.1em;
+  --icon-lg: 1.2em;
+  /* The box every Lucide icon draws in (.lucide below). Lucide leaves about two of
+     its 24 grid units empty on each side, so a 1em box draws an icon visibly
+     smaller than the text beside it. 1.1em was picked by eye over 1em and 1.2em. */
+  --icon-size: 1.1em;
+
+  /* The raised panel a link-preview card sits on, so it reads as a distinct object
+     rather than as more chat text (Discord's treatment).
+     ⚠ Must differ from BOTH --bg (the chat background) and --bg-soft, because --bg-soft
+     is the message row's hover fill — a card painted --bg-soft would vanish the moment
+     you moved the pointer over its row. Derived rather than literal so it tracks whatever
+     theme the user has chosen: one step further from the background than hover is, in the
+     same direction.
+
+     ⚠⚠ The percentage is the CONTRAST DIAL, and it needs no light/dark branch — mixing --fg
+     (not white, not black) into the panel moves toward the text colour, which is lighter in a
+     dark theme and darker in a light one. Lowering it therefore softens the panel in both,
+     which is the whole reason this is a mix rather than two literals.
+
+     ⚠ 3%, down from 6%: a full-strength panel read as a distinct UI object sitting on the
+     conversation rather than as a note attached to a message. The floor is the paragraph above,
+     and it is closer than it looks — at 0% this IS --bg-soft and the card disappears under the
+     pointer. The remaining margin is deliberately slim, so treat this as tunable downward only
+     with a hovered row on screen to check it against. */
+  --embed-bg: color-mix(in srgb, var(--fg) 3%, var(--bg-soft));
+
+  /* How far a coloured mIRC background bleeds above and below its own text.
+
+     An inline span paints its background over the font's content area, not the
+     full line box — so at line-height 1.55 roughly a third of every line goes
+     unpainted, and multi-line ASCII art built from \x03FG,BG runs comes out
+     striped instead of solid. This is half that shortfall, applied as VERTICAL
+     padding, which on a non-replaced inline element paints without affecting
+     line-box height. The grid survives; the stripes close.
+
+     ⚠ The budget is EXACTLY half the leading — (1.55em - content area) / 2 —
+     and there is nothing else to spend. `.line` rows sit flush: row-gap is 0
+     and they carry no vertical padding, so a box taller than its line box
+     immediately laps the message above and below. That looks far worse than a
+     seam, because it crosses between messages, and a later row paints after the
+     earlier row's text, so the overlap also clips descenders (commas, slashes:
+     what art is made of).
+
+     The content area is font-derived (~1.15-1.25em for the mono stack) and CSS
+     can't express it, so this is a conservative constant rather than a formula:
+     small enough not to lap on any font in the stack, at the cost of a hairline
+     seam on fonts with a shorter content area. To find the exact maximum for
+     the font actually in use, measure it — the bounding rect of an inline span
+     IS the content area:
+
+       const l = document.querySelector('.line'), s = document.createElement('span');
+       s.textContent = 'X'; l.appendChild(s);
+       const cs = getComputedStyle(l);
+       console.log(((parseFloat(cs.lineHeight) - s.getBoundingClientRect().height)
+         / 2 / parseFloat(cs.fontSize)).toFixed(3) + 'em');
+       s.remove();
+
+     Tune here only; both the spoiler box and ordinary coloured runs read it. */
+  --mirc-bg-bleed: 0.15em;
+
+  /* How far a quoted line fades — the reply quote above a message and a `> …`
+     block quote in one (ReplyQuote.vue, .msg-quote). Opacity, not a colour, so a
+     nick in the quote keeps its own. */
+  --quote-fade: 0.45;
+
+  /* Corner radii. The app is intentionally flat (most things are square);
+     these are the few deliberate exceptions. */
+  --radius-sm: 2px;
+  --radius-reaction: 4px;
+  --radius-md: 6px;
+  --radius-pill: 999px;
+
+  /* Elevation. Floating surfaces (context menus, the action bar, toasts, modal
+     and Cmd-K cards) share one drop shadow so they read as the same family.
+     The input autocomplete pickers open *above* the composer, so they cast
+     upward — same softness, flipped direction. Internal tokens (like spacing
+     and z-index); not in the settings registry. */
+  --shadow-popover: 0 4px 14px rgba(0, 0, 0, 0.45);
+  --shadow-popover-up: 0 -4px 12px rgba(0, 0, 0, 0.4);
+}
+
+/* Mobile bumps the base size to 16px. Two reasons: iOS Safari auto-zooms
+   when an <input>/<textarea>'s computed font-size is below 16px (so we'd
+   need a textarea-specific override either way), and 16px is the iOS body-
+   text default — letting the whole shell scale together keeps the input
+   and the message list visually consistent rather than the chrome reading
+   smaller than what the user is typing into it. Desktop stays at 14px. */
+@media (max-width: 768px) {
+  :root {
+    --font-size: 16px;
+  }
+}
+
+/* Home-indicator clearance for desktop-layout shells (DesktopChat on iPad
+   PWA landscape, Settings, modals). Mobile chat's .mchat handles its own
+   inset via .composer-host so it's deliberately not listed here. Only
+   applies in PWA standalone — Mobile Safari's bottom chrome already
+   covers the home indicator. The :root[data-keyboard-open] override
+   collapses the inset when the soft keyboard is up (keyboard covers the
+   home-indicator zone). */
+@media (display-mode: standalone) {
+  .chat,
+  .settings-page,
+  .modal {
+    box-sizing: border-box;
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+}
+:root[data-keyboard-open='true'] .chat,
+:root[data-keyboard-open='true'] .settings-page,
+:root[data-keyboard-open='true'] .modal {
+  padding-bottom: 0;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app,
+#root {
+  /* 100% (not 100dvh) here — html/body fill the layout viewport and stay
+     locked. The shell (.mchat / .chat / .settings-page) uses 100dvh so
+     it shrinks with the iOS soft keyboard while the document underneath
+     stays put. */
+  height: 100%;
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--mono);
+  font-size: var(--font-size);
+  font-weight: var(--font-weight);
+  line-height: 1.55;
+  -webkit-font-smoothing: var(--font-smoothing-webkit, auto);
+  -moz-osx-font-smoothing: var(--font-smoothing-moz, auto);
+  text-rendering: optimizeLegibility;
+}
+
+/* Headings inherit the base size like every other piece of text — the
+   one-font-size rule covers header text too. Without this, <h1>–<h6> fall back
+   to the browser's default heading sizes (which is why the modal title and the
+   profile section headers were rendering larger than body text). Hierarchy is
+   carried by weight/color/position, not size. The two intentionally oversized
+   titles — the login brand and the word backdrop — set their own font-size in
+   scoped styles, which outranks this bare-element rule. */
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-size: var(--font-size);
+}
+
+/* Whole app behaves like a CLI window — no document-level scroll.
+   overflow:hidden + overscroll-behavior:none gets us most of the way,
+   but iOS Safari will still let the user drag-scroll the document
+   despite both of those (a documented iOS quirk). `touch-action: none`
+   on body is the load-bearing line that blocks that — children with
+   their own scroll behaviors (MessageList, modal scroll areas) re-enable
+   via `touch-action: pan-y`. Without this, focusing the input on iOS
+   Safari and dragging up would scroll the document and leave a
+   persistent gap below the shell (issue #114). */
+html,
+body {
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+body {
+  touch-action: none;
+}
+
+/* Scrollable regions explicitly re-enable vertical pan — body's
+   touch-action:none disables it for descendants by default. Add to this
+   list when introducing a new scroll container. overscroll-behavior:
+   contain stops scroll chaining from these regions back to the document. */
+.message-list,
+.scroll-region {
+  overscroll-behavior: contain;
+  touch-action: pan-y;
+}
+
+a {
+  color: var(--accent);
+}
+
+/* Auto-linked URLs in chat messages and the channel topic. Defined here
+   (not inside a scoped component style) so both MessageList and the topic
+   bar in Chat.vue share one rule. */
+.msg-link {
+  color: var(--link);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--link) 40%, transparent);
+  text-underline-offset: 2px;
+}
+.msg-link:hover {
+  text-decoration-color: var(--link);
+}
+
+/* A quoted line in a message — `> <alice> what she said`, the Quote action's
+   line (#1119) or one typed by hand — drawn as a block quote: a bar where the
+   `> ` was, and the text faded the way the reply quote above a message is
+   (--quote-fade). Here rather than in a scoped style because RenderSegments
+   renders it and MessageList owns the body, like .msg-link. A quote of nothing
+   but a hidden link still keeps its line, so the bar shows above the picture. */
+.msg-quote {
+  display: block;
+  min-height: 1lh;
+  border-left: 2px solid currentColor;
+  padding-left: 1ch;
+  color: var(--fg);
+  font-style: italic;
+  opacity: var(--quote-fade);
+}
+
+/* Auto-linked IRC channel names in chat messages. Kept at the normal message
+   text colour — the pointer cursor and hover underline are the only cues. */
+.msg-channel {
+  cursor: pointer;
+}
+.msg-channel:hover {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.msg-channel:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+  border-radius: 2px;
+}
+
+/* Coloured nick mentions inside message text. Clickable to open the member
+   menu (Reply, whois, DM, …), the same affordance as the nicklist. The nick
+   keeps its inline colour; a pointer cursor is the only added cue — no hover
+   underline, to match the author and event-line nicks. Left selectable so the
+   message text stays copyable. */
+.msg-nick {
+  cursor: pointer;
+}
+
+/* Icons (@lucide/vue). Each renders an <svg class="lucide"> at 24px by default;
+   an em-based --icon-size instead makes an icon track the font-size of whatever
+   holds it, so the one-size rule's text and the --icon-md/--icon-lg tokens on
+   icon-only controls size it. The vertical-align centres an inline icon on the
+   text's x-height (flex rows ignore it). Lucide draws outlines in currentColor, so
+   `color` tints an icon as it would text. */
+.lucide {
+  width: var(--icon-size);
+  height: var(--icon-size);
+  flex-shrink: 0;
+  vertical-align: calc(0.35em - var(--icon-size) / 2);
+}
+/* An on state drawn as a filled glyph (a starred upload). */
+.lucide.icon-filled {
+  fill: currentColor;
+}
+/* A progress spinner (LoaderCircleIcon). */
+.lucide.icon-spin {
+  animation: icon-spin 1s linear infinite;
+}
+@keyframes icon-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .lucide.icon-spin {
+    animation: none;
+  }
+}
+
+/* Button language (#355): accent = actionable, gray = disabled. Buttons carry
+   the accent color, brighten to --fg on hover (no gray fill), and drop to the
+   muted gray on :disabled — so "gray" unambiguously means "you can't click
+   this." */
+button {
+  font: inherit;
+  background: transparent;
+  color: var(--accent);
+  border: 1px solid var(--border);
+  border-radius: 0;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+button:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--fg);
+}
+button:disabled {
+  opacity: 0.5;
+  color: var(--fg-muted);
+  cursor: not-allowed;
+}
+
+/* Action buttons — modal footers, confirmations, the profile panel. One
+   system, promoted out of the per-modal copies that had drifted. Outline style
+   throughout: accent is the only color cue (primary = accent, danger = bad),
+   keeping the flat aesthetic and the menus' "accent for emphasis, not fill"
+   language. inline-flex so any button can carry a leading icon. */
+.btn-primary,
+.btn-secondary {
+  font: inherit;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--accent);
+  padding: var(--space-3) var(--space-6);
+  cursor: pointer;
+}
+.btn-secondary:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--fg);
+}
+.btn-primary {
+  /* Same accent text as secondary; the always-on accent border is what marks
+     it as the primary/emphasized action. */
+  border-color: var(--accent);
+}
+.btn-primary:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+}
+.btn-primary.danger,
+.btn-secondary.danger {
+  border-color: var(--bad);
+  color: var(--bad);
+}
+.btn-primary.danger:hover:not(:disabled),
+.btn-secondary.danger:hover:not(:disabled) {
+  border-color: var(--bad);
+  /* Re-assert the red text: the general button / .btn-secondary :hover rules set
+     color:--fg at higher specificity than the non-hover .danger rule, so without
+     this the destructive label flips to --fg on hover (only border/bg stay red). */
+  color: var(--bad);
+  background: color-mix(in srgb, var(--bad) 15%, transparent);
+}
+.btn-primary:disabled,
+.btn-secondary:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* Button bar — a list row's actions as one strip of compact outline buttons
+   that share their borders, the way the status bar's segments share a pipe:
+   chrome without weight. The buttons are the plain `button` above (outline,
+   accent, hover to --fg); the bar only tightens them and overlaps their
+   borders. A .good or .bad button carries its tone, and keeps it on hover as
+   .danger does. Used by the DCC window's rows; any row of actions beside
+   content can take the same class. */
+.btn-bar {
+  display: inline-flex;
+  align-items: stretch;
+}
+.btn-bar > button {
+  padding: var(--space-2) var(--space-4);
+  white-space: nowrap;
+}
+/* Neighbours overlap by a pixel so the strip has one border between them; the
+   hovered button rises so its coloured border shows on both sides. */
+.btn-bar > button + button {
+  margin-left: -1px;
+}
+.btn-bar > button:hover:not(:disabled) {
+  position: relative;
+  z-index: var(--z-raised);
+}
+.btn-bar > button.good {
+  color: var(--good);
+}
+.btn-bar > button.bad {
+  color: var(--bad);
+}
+.btn-bar > button.good:hover:not(:disabled) {
+  border-color: var(--good);
+  color: var(--good);
+}
+.btn-bar > button.bad:hover:not(:disabled) {
+  border-color: var(--bad);
+  color: var(--bad);
+}
+/* A toggle (it carries aria-pressed) is muted until pressed, then reads as the
+   choice: --fg text, an accent border lifted over its neighbours, a soft fill.
+   An action stays accent, so a bar of choices and a bar of actions differ at
+   a glance. */
+.btn-bar > button[aria-pressed] {
+  color: var(--fg-muted);
+}
+.btn-bar > button[aria-pressed]:hover:not(:disabled) {
+  color: var(--fg);
+}
+.btn-bar > button[aria-pressed='true'] {
+  position: relative;
+  z-index: var(--z-raised);
+  color: var(--fg);
+  border-color: var(--accent);
+  background: var(--bg-soft);
+}
+/* On mobile, footer buttons that pair an icon with a text label collapse to
+   icon-only to save room — wrap the label in <span class="label"> to opt in.
+   Text-only buttons (no .label) keep their text.
+
+   Clip the label out of view rather than `display: none` so it stays in the
+   accessibility tree: the button is icon-only to the eye but still has a text
+   accessible name for screen readers, no per-call-site aria-label needed. */
+@media (max-width: 768px) {
+  .btn-primary .label,
+  .btn-secondary .label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+}
+
+/* Modal action footer — a toolbar pinned to the bottom of the card. AppModal's
+   card is a flex column with a capped height, so a footer placed as the last
+   flex child (after a flex:1 scrollable body) stays pinned and visible while
+   the body scrolls. One system, promoted out of the per-modal .footer/.actions/
+   .foot copies that had drifted — same move the .btn-* block made in #267.
+
+   Right-aligned by default (the Cancel/Save dialog case). A flex `.spacer`
+   shifts items left for toolbar-style footers (profile, network), and
+   margin-right:auto on a lone destructive button pushes it away from the
+   positive actions. The border-top mirrors the head's divider on the far edge;
+   like the head it stays inset by the card padding rather than breaking out. */
+.modal-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-4);
+  padding-top: var(--space-6);
+  border-top: 1px solid var(--border);
+}
+.modal-footer .spacer {
+  flex: 1;
+}
+
+/* A form (or wrapper) that fills the modal card so its own `.modal-footer` pins
+   to the bottom: it becomes the card's growable flex column, with a scrollable
+   body above the footer sibling. Keeping the footer inside the form preserves
+   native Enter-to-submit (the submit button stays form-associated). */
+.modal-form {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+input,
+select,
+textarea {
+  font: inherit;
+  background: var(--bg);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 0;
+  padding: 4px 8px;
+}
+input:focus,
+select:focus,
+textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+/* Dim placeholders well below real input text (and below --fg-muted) so users
+   don't mistake the hint for content they typed. opacity:1 neutralises
+   Firefox's default placeholder dimming so our colour is what shows. */
+input::placeholder,
+textarea::placeholder {
+  color: color-mix(in srgb, var(--fg-muted) 55%, var(--bg));
+  opacity: 1;
+}
+
+/* Subtle scrollbar that matches the flat aesthetic. */
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+*::-webkit-scrollbar-thumb {
+  background: var(--bg-soft);
+  border: 2px solid var(--bg);
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--fg-muted);
+}
+* {
+  scrollbar-color: var(--bg-soft) transparent;
+  scrollbar-width: thin;
+}
+
+/* Paused-account read-only shell. The wrapper is invisible to layout until the
+   account is paused (display:contents), so the unpaused app renders exactly as
+   before. When paused it becomes a flex column: PausedBanner takes its natural
+   height at the top and the route view fills the rest — overriding each view's
+   own 100dvh root, which would otherwise overflow below the banner. The child
+   selector's 3-class specificity wins over a view's own (scoped) height rule. */
+.app-shell {
+  display: contents;
+}
+.app-shell.is-paused {
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+}
+.app-shell.is-paused > :not(.paused-banner) {
+  flex: 1 1 auto;
+  min-height: 0;
+  height: auto;
+}
+
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--fg-muted);
+  cursor: pointer;
+  transition: background-color 0.12s ease, color 0.12s ease;
+}
+.icon-btn:hover {
+  background: var(--bg-hover);
+  color: var(--fg);
+}
+.icon-btn:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
+}
+
+.topic-scroll-viewport {
+  overflow-x: auto;
+  overflow-y: hidden;
+  white-space: nowrap;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.topic-scroll-viewport::-webkit-scrollbar {
+  display: none;
+}
+
+.topic-scroll-track {
+  display: inline-block;
+  white-space: nowrap;
+  will-change: transform;
+}
+
+.topic-scroll-track-idle {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@keyframes topic-hover-scroll {
+  0%,
+  10% {
+    transform: translateX(0);
+  }
+  75%,
+  88% {
+    transform: translateX(var(--topic-scroll-dist, 0px));
+  }
+  100% {
+    transform: translateX(0);
+  }
+}
+
+.topic-scroll-track-active {
+  animation: topic-hover-scroll var(--topic-scroll-duration, 6s) linear infinite;
+}

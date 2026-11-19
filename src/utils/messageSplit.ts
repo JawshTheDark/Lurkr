@@ -1,0 +1,240 @@
+// Copyright (c) 2026 Brad Root
+// SPDX-License-Identifier: MPL-2.0
+
+// Client-side estimate of how many IRC lines a message will split into when
+// the server splits it. We can't import the server-side helper (it imports
+// from irc-framework's source tree) so this is a deliberately simpler port —
+// word-greedy, byte-aware, accurate for ASCII and well-formed UTF-8.
+// Pathological input (a 10kB string with no whitespace) might miscount by one
+// chunk, which we accept: the UI hint is guidance, not a wire-level decision.
+// The actual splitting still happens server-side via irc-framework's
+// lineBreak().
+//
+// The server splits to the network's real line budget (shared/wireBudget,
+// #1043) and tells us the one input we can't know — the bytes of our
+// user@host — as `userhostBytes`; textBudgetFor measures by the same formula.
+// Without it (a server from before #1043) we fall back to the fixed budgets
+// irc-framework split by, which server/services/messageSplit.ts keeps as its
+// defaults too.
+import {
+  LEGACY_ACTION_BUDGET,
+  LEGACY_TEXT_BUDGET,
+  textBudget,
+} from '../shared/wireBudget.js';
+
+export const MESSAGE_MAX_BYTES = LEGACY_TEXT_BUDGET;
+export const ACTION_MAX_BYTES = LEGACY_ACTION_BUDGET;
+
+/** Bytes of text one line to `target` carries on this network, as the server
+ *  will split it. */
+export function textBudgetFor(
+  net: { nick?: string; userhostBytes?: number | null } | null | undefined,
+  target: string,
+  action = false,
+): number {
+  if (!net?.nick || typeof net.userhostBytes !== 'number') {
+    return action ? ACTION_MAX_BYTES : MESSAGE_MAX_BYTES;
+  }
+  return textBudget({
+    nick: net.nick,
+    userhostBytes: net.userhostBytes,
+    command: 'PRIVMSG',
+    target,
+    action,
+  });
+}
+
+const encoder = new TextEncoder();
+// UTF-8 length — the unit every wire budget is in.
+export function byteLen(s: string): number {
+  return encoder.encode(s).byteLength;
+}
+
+// Greedy word-pack: walk whitespace-separated tokens, fit as many as we can
+// into each chunk's byte budget, start a new chunk on overflow. If a single
+// token exceeds the budget on its own, we approximate by counting how many
+// budget-sized slices it'd take — close enough to irc-framework's
+// grapheme/codepoint cascade for any input a human types.
+function chunksForLine(line: string, bytes: number): number {
+  if (!line) return 0;
+  // Fast path: whole line fits.
+  if (byteLen(line) <= bytes) return 1;
+
+  let count = 0;
+  let cur = '';
+  let pendingWs = '';
+  const tokens = line.split(/(\s+)/); // alternates non-ws, ws, non-ws, ws...
+
+  const flushNew = (word: string): void => {
+    if (cur) {
+      count += 1;
+      cur = '';
+      pendingWs = '';
+    }
+    if (byteLen(word) <= bytes) {
+      cur = word;
+      return;
+    }
+    // Word alone won't fit — split into byte-sized slices. Iterate by code
+    // point so we don't tear surrogate pairs.
+    let acc = '';
+    for (const cp of word) {
+      if (byteLen(acc) + byteLen(cp) > bytes) {
+        count += 1;
+        acc = cp;
+      } else {
+        acc += cp;
+      }
+    }
+    cur = acc;
+  };
+
+  for (const tok of tokens) {
+    if (!tok) continue;
+    if (/^\s+$/.test(tok)) {
+      pendingWs = tok;
+      continue;
+    }
+    if (!cur) {
+      flushNew(tok);
+      continue;
+    }
+    if (byteLen(cur) + byteLen(pendingWs) + byteLen(tok) <= bytes) {
+      cur += pendingWs + tok;
+      pendingWs = '';
+    } else {
+      flushNew(tok);
+    }
+  }
+  if (cur) count += 1;
+  return count;
+}
+
+// PRIVMSG path: split on newlines first (each line independently chunked),
+// matching what irc-framework's sendMessage() does.
+export function chunkCountForSay(
+  text: string | null | undefined,
+  bytes = MESSAGE_MAX_BYTES,
+): number {
+  if (!text) return 0;
+  let total = 0;
+  for (const line of text.split(/\r\n|\n|\r/)) {
+    if (!line) continue;
+    total += chunksForLine(line, bytes);
+  }
+  return total;
+}
+
+// How many lines the user typed into a PRIVMSG body: the newline-separated
+// non-empty lines, each a split point they can see. When this equals the
+// chunk count, nothing was torn by word wrap (#1119).
+export function lineCountForSay(text: string | null | undefined): number {
+  if (!text) return 0;
+  return text.split(/\r\n|\n|\r/).filter(Boolean).length;
+}
+
+// CTCP ACTION path: no newline pre-split (matches irc-framework), tighter
+// budget to leave room for the \x01ACTION ... \x01 wrapper.
+export function chunkCountForAction(
+  text: string | null | undefined,
+  bytes = ACTION_MAX_BYTES,
+): number {
+  if (!text) return 0;
+  return chunksForLine(text, bytes);
+}
+
+// What the composer should do with a draft that spans more than one message.
+// 'send' goes straight out; 'confirm' shows the send-again toast; 'upload'
+// offers the upload-as-.txt modal. `confirmed` carries the second-press
+// override from a previous Send on the same draft.
+//
+// chat.allow_split_messages is honoured at EVERY size: a user who turned it on
+// asked for splits to go out silently, so gating the 3+ tier anyway made the
+// setting look broken (#578). With it off, 2 messages get the cheap toast and
+// 3+ get the modal, since uploading is only worth offering for a real flood.
+//
+// The toast is for a split the user can't see: one long line torn in two by
+// word wrap. Two lines they typed themselves (`typedLines`, the body's newline
+// count, matching `count`) are two messages on purpose — a Quote above a reply
+// (#1119), a two-line thought — and go out without asking. A batch boundary on
+// a multiline network is invisible too, so that path passes 0.
+export type SplitGate = 'send' | 'confirm' | 'upload';
+
+export function splitGateFor(opts: {
+  count: number;
+  allowSplit: boolean;
+  confirmed: boolean;
+  typedLines?: number;
+}): SplitGate {
+  const { count, allowSplit, confirmed, typedLines = 0 } = opts;
+  if (count <= 1 || allowSplit || confirmed) return 'send';
+  if (count === 2 && typedLines === count) return 'send';
+  return count >= 3 ? 'upload' : 'confirm';
+}
+
+export interface MultilineLimits {
+  maxBytes: number;
+  maxLines: number;
+}
+
+// How many draft/multiline batches a plain body will produce on a network that
+// negotiated the cap — i.e. how many logical messages the channel will see.
+// Returns 0 when the send won't be multiline at all (one line that fits a
+// PRIVMSG, or the network lacks the cap), so callers treat 0 as "fall back to
+// the wire-chunk estimate". 1 = a single batch (no flood); ≥2 = that many
+// messages, NOT N raw lines. A single line too long for the wire is a batch
+// too (its pieces are concat continuations), the same as the server's gate.
+//
+// Mirrors the server's partitionMultiline (server/services/messageSplit): pack
+// lines into batches under max-lines (count of wire PRIVMSGs) and max-bytes
+// (utf-8 content bytes), tearing a single line that's bigger than a whole batch
+// across batches. Per-line wire count reuses chunksForLine (the same word-greedy
+// splitter behind chunkCountForSay) so the multiline count and the SPLIT/FLOOD
+// count agree. Edge blank lines are trimmed to match splitMultiline.
+export function multilineMessageCount(
+  text: string | null | undefined,
+  limits: MultilineLimits | null | undefined,
+  bytes = MESSAGE_MAX_BYTES,
+): number {
+  if (!text || !limits) return 0;
+  // A max-bytes below one full wire line can't carry a PRIVMSG in a batch — the
+  // server reports null limits for it, but guard here too so the count matches.
+  if (limits.maxBytes < MESSAGE_MAX_BYTES) return 0;
+  const body = text.replace(/^(?:\r\n|\r|\n)+/, '').replace(/(?:\r\n|\r|\n)+$/, '');
+  const oneLine = !/\r\n|\n|\r/.test(body);
+  let batches = 0;
+  let curLines = 0;
+  let curBytes = 0;
+  const flush = (): void => {
+    if (curLines > 0) {
+      batches += 1;
+      curLines = 0;
+      curBytes = 0;
+    }
+  };
+  for (const line of body.split(/\r\n|\n|\r/)) {
+    const wireLines = Math.max(1, chunksForLine(line, bytes));
+    // One line that fits one PRIVMSG is not a multiline send.
+    if (oneLine && wireLines <= 1) return 0;
+    const lineBytes = byteLen(line);
+    if (
+      curLines > 0 &&
+      (curLines + wireLines > limits.maxLines || curBytes + lineBytes > limits.maxBytes)
+    ) {
+      flush();
+    }
+    if (wireLines > limits.maxLines || lineBytes > limits.maxBytes) {
+      // A single line too big for one batch spans several on its own.
+      flush();
+      batches += Math.max(
+        Math.ceil(wireLines / limits.maxLines),
+        Math.ceil(lineBytes / limits.maxBytes),
+      );
+      continue;
+    }
+    curLines += wireLines;
+    curBytes += lineBytes;
+  }
+  flush();
+  return batches;
+}
