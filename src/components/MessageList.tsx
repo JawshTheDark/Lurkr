@@ -340,9 +340,16 @@ export const MessageList: React.FC<MessageListProps> = ({ buffer, onOpenReaction
                   </div>
                 )}
 
-                <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px', flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
                   {showTimestamps && timeStr && (
-                    <span style={{ color: 'var(--fg-muted)', fontSize: '0.78em', flexShrink: 0 }}>
+                    <span
+                      style={{
+                        color: 'var(--fg-muted)',
+                        fontSize: '0.78em',
+                        flexShrink: 0,
+                        fontVariantNumeric: 'tabular-nums',
+                      }}
+                    >
                       {formatTimestamp(
                         timeStr,
                         use24h
@@ -356,134 +363,138 @@ export const MessageList: React.FC<MessageListProps> = ({ buffer, onOpenReaction
                     </span>
                   )}
 
-                  {!isSystemEvent && displayNick && (
-                    <span
-                      role="button"
-                      tabIndex={0}
-                      title={relayBot ? `Relayed via ${relayBot}` : displayNick}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setNickCtx({
-                          open: true,
-                          x: e.clientX,
-                          y: e.clientY,
-                          nick: displayNick,
-                          relayBot,
-                          isSelf: displaySelf,
-                        });
-                      }}
-                      onContextMenu={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        setNickCtx({
-                          open: true,
-                          x: e.clientX,
-                          y: e.clientY,
-                          nick: displayNick,
-                          relayBot,
-                          isSelf: displaySelf,
-                        });
-                      }}
-                      style={{
-                        color: resolveThemedNickColor(displayNick, displaySelf) || undefined,
-                        fontWeight: 600,
-                        flexShrink: 0,
-                        cursor: 'pointer',
-                      }}
-                    >
-                      {m.type === 'action' ? `* ${displayNick}` : `<${displayNick}>`}
-                    </span>
-                  )}
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px', flexWrap: 'wrap' }}>
+                      {!isSystemEvent && displayNick && (
+                        <span
+                          role="button"
+                          tabIndex={0}
+                          title={relayBot ? `Relayed via ${relayBot}` : displayNick}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setNickCtx({
+                              open: true,
+                              x: e.clientX,
+                              y: e.clientY,
+                              nick: displayNick,
+                              relayBot,
+                              isSelf: displaySelf,
+                            });
+                          }}
+                          onContextMenu={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            setNickCtx({
+                              open: true,
+                              x: e.clientX,
+                              y: e.clientY,
+                              nick: displayNick,
+                              relayBot,
+                              isSelf: displaySelf,
+                            });
+                          }}
+                          style={{
+                            color: resolveThemedNickColor(displayNick, displaySelf) || undefined,
+                            fontWeight: 600,
+                            flexShrink: 0,
+                            cursor: 'pointer',
+                          }}
+                        >
+                          {m.type === 'action' ? `* ${displayNick}` : `<${displayNick}>`}
+                        </span>
+                      )}
 
-                  <span
-                    style={{
-                      color: isSystemEvent
-                        ? 'var(--fg-muted)'
-                        : isAlt && !isHighlight
-                          ? 'var(--alt-fg)'
-                          : 'var(--fg)',
-                      fontStyle: m.type === 'action' || redaction ? 'italic' : 'normal',
-                      opacity: redaction ? 0.6 : 1,
-                      wordBreak: 'break-word',
-                      flex: 1,
-                      minWidth: 0,
-                    }}
-                  >
-                    {relaySource && !redaction && (
                       <span
-                        className="relay-via"
-                        title={relayBot ? `Relayed via ${relayBot}` : undefined}
-                        style={{ color: 'var(--fg-muted)', marginRight: '5px', fontSize: '0.88em' }}
+                        style={{
+                          color: isSystemEvent
+                            ? 'var(--fg-muted)'
+                            : isAlt && !isHighlight
+                              ? 'var(--alt-fg)'
+                              : 'var(--fg)',
+                          fontStyle: m.type === 'action' || redaction ? 'italic' : 'normal',
+                          opacity: redaction ? 0.6 : 1,
+                          wordBreak: 'break-word',
+                          flex: 1,
+                          minWidth: 0,
+                        }}
                       >
-                        [{relaySource}]
+                        {relaySource && !redaction && (
+                          <span
+                            className="relay-via"
+                            title={relayBot ? `Relayed via ${relayBot}` : undefined}
+                            style={{ color: 'var(--fg-muted)', marginRight: '5px', fontSize: '0.88em' }}
+                          >
+                            [{relaySource}]
+                          </span>
+                        )}
+                        {redaction ? (
+                          `[message deleted by ${redaction.by}${redaction.reason ? `: ${redaction.reason}` : ''}]`
+                        ) : (
+                          <LinkedText text={text} networkId={buffer.networkId} />
+                        )}
                       </span>
-                    )}
-                    {redaction ? (
-                      `[message deleted by ${redaction.by}${redaction.reason ? `: ${redaction.reason}` : ''}]`
-                    ) : (
-                      <LinkedText text={text} networkId={buffer.networkId} />
-                    )}
-                  </span>
-                </div>
+                    </div>
 
-                {!redaction && (m.type === 'message' || m.type === 'action') && (
-                  <MessageAttachments text={text} />
-                )}
+                    {!redaction && (m.type === 'message' || m.type === 'action') && (
+                      <MessageAttachments text={text} />
+                    )}
 
-                {(reactionGroups.length > 0 || (threadsEnabled && threadStats?.count > 0)) && (
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '4px', paddingLeft: '4px' }}>
-                    {reactionGroups.map((g) => (
-                      <button
-                        key={g.value}
-                        type="button"
-                        title={g.nicks.join(', ')}
-                        onClick={() => {
-                          if (buffer.networkId != null && m.id != null) {
-                            useReactionsStore
-                              .getState()
-                              .toggle(buffer.networkId, buffer.target, Number(m.id), g.value);
-                          }
-                        }}
-                        style={{
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          gap: '4px',
-                          padding: '1px 6px',
-                          borderRadius: '10px',
-                          border: `1px solid ${g.mine ? 'var(--accent)' : 'var(--border)'}`,
-                          background: g.mine ? 'rgba(100,150,255,0.12)' : 'var(--bg-soft)',
-                          color: 'var(--fg)',
-                          fontSize: '0.78em',
-                          cursor: 'pointer',
-                        }}
-                      >
-                        <span>{g.value}</span>
-                        <span>{g.nicks.length}</span>
-                      </button>
-                    ))}
-                    {threadsEnabled && threadStats?.count > 0 && buffer.id != null && (m as any).msgid && (
-                      <button
-                        type="button"
-                        onClick={() => useThreadsStore.getState().open(buffer.id!, (m as any).msgid)}
-                        style={{
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          gap: '4px',
-                          padding: '1px 8px',
-                          borderRadius: '10px',
-                          border: '1px solid var(--border)',
-                          background: 'var(--bg-soft)',
-                          color: 'var(--link)',
-                          fontSize: '0.78em',
-                          cursor: 'pointer',
-                        }}
-                      >
-                        <MessageSquare size={11} />
-                        {threadStats.count} {threadStats.count === 1 ? 'reply' : 'replies'}
-                      </button>
+                    {(reactionGroups.length > 0 || (threadsEnabled && threadStats?.count > 0)) && (
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '4px' }}>
+                        {reactionGroups.map((g) => (
+                          <button
+                            key={g.value}
+                            type="button"
+                            title={g.nicks.join(', ')}
+                            onClick={() => {
+                              if (buffer.networkId != null && m.id != null) {
+                                useReactionsStore
+                                  .getState()
+                                  .toggle(buffer.networkId, buffer.target, Number(m.id), g.value);
+                              }
+                            }}
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '4px',
+                              padding: '1px 6px',
+                              borderRadius: '10px',
+                              border: `1px solid ${g.mine ? 'var(--accent)' : 'var(--border)'}`,
+                              background: g.mine ? 'rgba(100,150,255,0.12)' : 'var(--bg-soft)',
+                              color: 'var(--fg)',
+                              fontSize: '0.78em',
+                              cursor: 'pointer',
+                            }}
+                          >
+                            <span>{g.value}</span>
+                            <span>{g.nicks.length}</span>
+                          </button>
+                        ))}
+                        {threadsEnabled && threadStats?.count > 0 && buffer.id != null && (m as any).msgid && (
+                          <button
+                            type="button"
+                            onClick={() => useThreadsStore.getState().open(buffer.id!, (m as any).msgid)}
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '4px',
+                              padding: '1px 8px',
+                              borderRadius: '10px',
+                              border: '1px solid var(--border)',
+                              background: 'var(--bg-soft)',
+                              color: 'var(--link)',
+                              fontSize: '0.78em',
+                              cursor: 'pointer',
+                            }}
+                          >
+                            <MessageSquare size={11} />
+                            {threadStats.count} {threadStats.count === 1 ? 'reply' : 'replies'}
+                          </button>
+                        )}
+                      </div>
                     )}
                   </div>
-                )}
+                </div>
 
                 {!isSystemEvent && !redaction && m.id != null && (
                   <div
