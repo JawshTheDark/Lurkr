@@ -67,7 +67,7 @@ jobs:
           - label: Windows x64 (NSIS, Portable, Zip)
             os: windows-latest
             artifact: lurkr-windows-x64
-            cmd: npm run build && npx electron-builder --win nsis portable zip --x64
+            cmd: npm run build && npx electron-builder --win nsis portable zip --x64 --publish never
             verify: |
               test -f release/win-unpacked/Lurkr.exe
               ls release/*-win-x64-setup.exe release/*-win-x64-portable.exe release/*-win-x64.zip

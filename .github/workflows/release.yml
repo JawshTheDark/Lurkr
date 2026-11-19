@@ -61,7 +61,7 @@ jobs:
         include:
           - label: Windows (x64 & arm64 Setup, Portable, Zip)
             os: windows-latest
-            cmd: npm run build && npx electron-builder --win nsis portable zip --x64 --arm64
+            cmd: npm run build && npx electron-builder --win nsis portable zip --x64 --arm64 --publish never
             paths: |
               release/*-win-*.exe
               release/*-win-*.zip
