@@ -415,11 +415,14 @@ async function connectCdp(port) {
       targets = await res.json();
       const page = targets.find((t) => t.type === 'page' && t.webSocketDebuggerUrl);
       if (page) {
+        console.log('[step] Found CDP page target:', page.webSocketDebuggerUrl);
         const ws = new WebSocket(page.webSocketDebuggerUrl);
         await new Promise((resOpen, rejOpen) => {
-          ws.addEventListener('open', resOpen, { once: true });
-          ws.addEventListener('error', rejOpen, { once: true });
+          const t = setTimeout(() => rejOpen(new Error('CDP WebSocket open timeout')), 10000);
+          ws.addEventListener('open', () => { clearTimeout(t); resOpen(); }, { once: true });
+          ws.addEventListener('error', (e) => { clearTimeout(t); rejOpen(e); }, { once: true });
         });
+        console.log('[step] CDP WebSocket open');
         let nextId = 1;
         const pending = new Map();
         ws.addEventListener('message', (ev) => {
@@ -493,7 +496,11 @@ const electronArgs = [`--remote-debugging-port=${cdpPort}`];
 if (process.platform === 'linux') {
   electronArgs.push('--no-sandbox');
 }
+if (process.platform === 'darwin') {
+  electronArgs.push('--use-mock-keychain', '--disable-gpu-sandbox');
+}
 
+console.log('[step] Spawning:', binaryPath, electronArgs.join(' '));
 const child = spawn(binaryPath, electronArgs, {
   env: {
     ...process.env,
@@ -503,42 +510,26 @@ const child = spawn(binaryPath, electronArgs, {
   stdio: ['ignore', 'pipe', 'pipe'],
 });
 
-child.stderr.on('data', (d) => process.stderr.write(d));
+child.stdout.on('data', (d) => process.stdout.write(`[app-out] ${d}`));
+child.stderr.on('data', (d) => process.stderr.write(`[app-err] ${d}`));
 
-function tryMacOsNativeCapture(filename, pid) {
+const hardWatchdog = setTimeout(() => {
+  console.error('[fatal] Hard 75s watchdog expired — killing Lurkr process');
+  child.kill('SIGKILL');
+  server.closeAllConnections?.();
+  server.close();
+  process.exit(1);
+}, 75_000);
+hardWatchdog.unref();
+
+function tryMacOsNativeCapture(filename) {
   if (process.platform !== 'darwin') return;
-  try {
-    spawnSync('osascript', ['-e', `tell application "System Events" to set frontmost of first process whose unix id is ${pid} to true`], {
-      encoding: 'utf8',
-    });
-  } catch {
-    /* ignore focus attempt */
-  }
   const dest = path.join(outDir, filename);
-  try {
-    const widOut = execFileSync(
-      'swift',
-      [
-        '-e',
-        `import CoreGraphics; let list = CGWindowListCopyWindowInfo(.optionOnScreenOnly, kCGNullWindowID) as? [[String: Any]] ?? []; for w in list { if (w[kCGWindowOwnerPID as String] as? Int) == ${pid}, let layer = w[kCGWindowLayer as String] as? Int, layer == 0, let id = w[kCGWindowNumber as String] as? Int { print(id); break } }`,
-      ],
-      { encoding: 'utf8', timeout: 10000 },
-    ).trim();
-    if (widOut) {
-      const winCap = spawnSync('screencapture', ['-x', '-l', widOut, dest], { encoding: 'utf8' });
-      if (winCap.status === 0 && fs.existsSync(dest)) {
-        console.log(`Captured native macOS Cocoa window ${dest} (CGWindowID ${widOut})`);
-        return;
-      }
-    }
-  } catch {
-    /* fall back to full screen capture */
-  }
-  const res = spawnSync('screencapture', ['-x', dest], { encoding: 'utf8' });
+  const res = spawnSync('screencapture', ['-x', dest], { encoding: 'utf8', timeout: 5000 });
   if (res.status === 0 && fs.existsSync(dest)) {
     console.log(`Captured native macOS screen ${dest}`);
   } else {
-    console.warn(`screencapture skipped/failed (${res.status}): ${res.stderr}`);
+    console.warn(`screencapture skipped/failed (${res.status}): ${res.stderr || res.error?.message || ''}`);
   }
 }
 
@@ -616,7 +607,7 @@ try {
     throw err;
   });
   await cdp.screenshot('02-chat-encrypted-preview.png');
-  if (child.pid) tryMacOsNativeCapture('05-macos-native-window.png', child.pid);
+  tryMacOsNativeCapture('05-macos-native-window.png');
 
   // 3. Settings -> Theme Studio
   await cdp.evalJs(`(() => {
@@ -669,8 +660,10 @@ try {
   }
   cdp.ws.close();
 } finally {
+  clearTimeout(hardWatchdog);
   child.kill('SIGTERM');
   setTimeout(() => child.kill('SIGKILL'), 1500).unref();
+  server.closeAllConnections?.();
   server.close();
   fs.rmSync(tempHome, { recursive: true, force: true });
 }
