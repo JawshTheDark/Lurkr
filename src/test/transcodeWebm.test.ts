@@ -53,8 +53,10 @@ describe('transcodeWebmFile', () => {
       sourcePath: inWebm,
     });
 
+    if (!res.ok) {
+      throw new Error(`Expected transcodeWebmFile to succeed, got: ${res.error}`);
+    }
     expect(res.ok).toBe(true);
-    if (!res.ok) return;
     expect(res.filename).toBe('Screencast_20261118_115849.mp4');
     expect(res.mime).toBe('video/mp4');
     expect(res.data.byteLength).toBeGreaterThan(200);

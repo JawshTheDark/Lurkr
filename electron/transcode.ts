@@ -153,7 +153,7 @@ export async function transcodeWebmFile(
           inputPath,
           '-vf',
           'scale=trunc(iw/2)*2:trunc(ih/2)*2',
-          '-vsync',
+          '-fps_mode',
           'vfr',
           '-c:v',
           'libx264',
