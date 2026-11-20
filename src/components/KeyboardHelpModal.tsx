@@ -22,6 +22,10 @@ const SHORTCUTS = [
   { keys: 'Tab', desc: 'Autocomplete nick, channel, or slash command' },
   { keys: 'Up / Down', desc: 'Recall previous sent messages (in empty/single-line input)' },
   { keys: 'Shift + Enter', desc: 'Insert newline in message composer' },
+  { keys: 'Ctrl / Cmd + Shift + K', desc: 'Open mIRC Color & Formatting Picker (or Ctrl + K on macOS)' },
+  { keys: 'Ctrl / Cmd + B / I / U', desc: 'Insert mIRC Bold / Italic / Underline formatting' },
+  { keys: 'Ctrl / Cmd + Shift + S / R', desc: 'Insert mIRC Strikethrough / Reverse formatting' },
+  { keys: 'Ctrl / Cmd + Shift + O', desc: 'Reset mIRC formatting (or Ctrl + O)' },
   { keys: 'Escape', desc: 'Cancel reply or close active modal' },
   { keys: 'Ctrl / Cmd + V', desc: 'Paste image/file to upload directly' },
 ];

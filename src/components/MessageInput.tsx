@@ -4,6 +4,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Paperclip,
+  Palette,
   Send,
   X,
   Star,
@@ -44,7 +45,24 @@ import {
 import { insertWithPadding } from '../utils/insertAtCaret';
 import { byteLen, chunkCountForSay, textBudgetFor } from '../utils/messageSplit';
 import { ensureUploadFilename, pastedUploadFiles } from '../utils/uploaders';
+import {
+  IRC_BOLD,
+  IRC_ITALIC,
+  IRC_UNDERLINE,
+  IRC_STRIKE,
+  IRC_REVERSE,
+  IRC_COLOR,
+  IRC_RESET,
+  applyIrcControlAtSelection,
+  formatMircColorCode,
+  hasIrcFormatting,
+  stripIrcFormatting,
+} from '../utils/mircFormat';
+import { applySpoilerMarkup } from '../utils/spoilerMarkup';
 import { LongMessageUploadModal } from './LongMessageUploadModal';
+import { TypingIndicator } from './TypingIndicator';
+import { MircFormatPopover } from './MircFormatPopover';
+import { LinkedText } from './LinkedText';
 
 interface MessageInputProps {
   networkId: number;
@@ -92,6 +110,7 @@ export const MessageInput: React.FC<MessageInputProps> = ({
 
   const uploadCurrent = useUploadsStore((s) => s.current);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [formatOpen, setFormatOpen] = useState(false);
   const menuMode = useUploadsStore((s) => s.menuMode);
   const menuItems = useUploadsStore((s) => s.menuItems);
   const menuLoading = useUploadsStore((s) => s.menuLoading);
@@ -160,7 +179,14 @@ export const MessageInput: React.FC<MessageInputProps> = ({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+  const attachBtnRef = useRef<HTMLButtonElement>(null);
+  const formatRef = useRef<HTMLDivElement>(null);
+  const formatBtnRef = useRef<HTMLButtonElement>(null);
   const lastTypingSentRef = useRef<number>(0);
+  const typingPhaseRef = useRef<'none' | 'active' | 'paused'>('none');
+  const typingPauseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const netStateRef = useRef(netState?.state);
+  netStateRef.current = netState?.state;
 
   // Tab completion cycling state
   const tabStateRef = useRef<{
@@ -187,12 +213,12 @@ export const MessageInput: React.FC<MessageInputProps> = ({
     }
   }, [autoFocus, networkId, target]);
 
-  // Auto-resize textarea
+  // Auto-resize textarea (keep minimum 36px to match toolbar buttons)
   useEffect(() => {
     const el = textareaRef.current;
     if (!el) return;
     el.style.height = 'auto';
-    el.style.height = `${Math.min(el.scrollHeight, 180)}px`;
+    el.style.height = `${Math.max(36, Math.min(el.scrollHeight, 180))}px`;
   }, [text]);
 
   // Register insert URL callback for uploads
@@ -215,41 +241,103 @@ export const MessageInput: React.FC<MessageInputProps> = ({
     return unsub;
   }, [networkId, target, text, threadRootMsgid]);
 
-  // Close attach menu on outside click
+  const clearTypingTimer = useCallback(() => {
+    if (typingPauseTimerRef.current) {
+      clearTimeout(typingPauseTimerRef.current);
+      typingPauseTimerRef.current = null;
+    }
+  }, []);
+
+  const emitTypingDoneIfActive = useCallback(() => {
+    clearTypingTimer();
+    const prevPhase = typingPhaseRef.current;
+    typingPhaseRef.current = 'none';
+    lastTypingSentRef.current = 0;
+    if (
+      prevPhase !== 'none' &&
+      !isServerBuffer &&
+      netStateRef.current === 'connected' &&
+      useSettingsStore.getState().effective('chat.send_typing_notifications') !== false
+    ) {
+      socketSend({ type: 'typing', networkId, target, state: 'done' });
+    }
+  }, [clearTypingTimer, isServerBuffer, networkId, target]);
+
+  // Emit 'done' when switching buffers or unmounting after active/paused typing
   useEffect(() => {
-    if (!menuOpen) return;
+    return () => {
+      emitTypingDoneIfActive();
+    };
+  }, [emitTypingDoneIfActive]);
+
+  // Close attach menu and formatting popover on outside click
+  useEffect(() => {
+    if (!menuOpen && !formatOpen) return;
     const onDocClick = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+      const node = e.target as Node;
+      if (menuOpen && menuRef.current && !menuRef.current.contains(node) && !attachBtnRef.current?.contains(node)) {
         setMenuOpen(false);
+      }
+      if (formatOpen && formatRef.current && !formatRef.current.contains(node) && !formatBtnRef.current?.contains(node)) {
+        setFormatOpen(false);
       }
     };
     document.addEventListener('mousedown', onDocClick);
     return () => document.removeEventListener('mousedown', onDocClick);
-  }, [menuOpen]);
+  }, [menuOpen, formatOpen]);
 
   const updateText = useCallback(
-    (next: string) => {
+    (next: string, opts?: { suppressTyping?: boolean }) => {
       textRef.current = next;
       setText(next);
       tabStateRef.current = null;
       if (!threadRootMsgid) {
         useDraftStore.getState().setDraft(networkId, target, next);
       }
-      // Emit typing indicator (throttled every 3s, only for non-command text in chat buffers)
-      const now = Date.now();
-      if (
+      if (opts?.suppressTyping) {
+        clearTypingTimer();
+        return;
+      }
+      const typingAllowed =
         !isServerBuffer &&
-        next.trim() &&
-        !next.startsWith('/') &&
         netState?.state === 'connected' &&
-        useSettingsStore.getState().effective('chat.send_typing_notifications') !== false &&
-        now - lastTypingSentRef.current > 3000
-      ) {
+        useSettingsStore.getState().effective('chat.send_typing_notifications') !== false;
+      const isPlainText = Boolean(next.trim()) && !next.startsWith('/');
+
+      if (!typingAllowed || !isPlainText) {
+        if (typingPhaseRef.current !== 'none') {
+          emitTypingDoneIfActive();
+        } else {
+          clearTypingTimer();
+        }
+        return;
+      }
+
+      // Emit 'active' immediately on transition or every 3s throttle while typing
+      const now = Date.now();
+      if (typingPhaseRef.current !== 'active' || now - lastTypingSentRef.current > 3000) {
         lastTypingSentRef.current = now;
+        typingPhaseRef.current = 'active';
         socketSend({ type: 'typing', networkId, target, state: 'active' });
       }
+
+      // Transition to 'paused' after 4.5s of idle non-empty input
+      clearTypingTimer();
+      typingPauseTimerRef.current = setTimeout(() => {
+        typingPauseTimerRef.current = null;
+        if (
+          typingPhaseRef.current === 'active' &&
+          !isServerBuffer &&
+          netStateRef.current === 'connected' &&
+          useSettingsStore.getState().effective('chat.send_typing_notifications') !== false
+        ) {
+          typingPhaseRef.current = 'paused';
+          lastTypingSentRef.current = 0;
+          socketSend({ type: 'typing', networkId, target, state: 'paused' });
+        }
+      }, 4500);
     },
-    [isServerBuffer, networkId, target, threadRootMsgid, netState?.state],
+    [isServerBuffer, networkId, target, threadRootMsgid, netState?.state, clearTypingTimer, emitTypingDoneIfActive],
   );
 
   const availableSlashCommands = useMemo(() => {
@@ -424,7 +512,7 @@ export const MessageInput: React.FC<MessageInputProps> = ({
       const numericReplyTo =
         typeof rawReplyTo === 'number' && Number.isInteger(rawReplyTo) ? rawReplyTo : undefined;
 
-      updateText('');
+      updateText('', { suppressTyping: true });
       if (!threadRootMsgid) {
         useDraftStore.getState().flush(networkId, target);
       }
@@ -442,7 +530,7 @@ export const MessageInput: React.FC<MessageInputProps> = ({
 
       if (!ack.ok) {
         if (!textRef.current && body) {
-          updateText(body);
+          updateText(body, { suppressTyping: true });
         }
         useToastsStore.getState().push({
           title: 'Message not sent',
@@ -450,6 +538,9 @@ export const MessageInput: React.FC<MessageInputProps> = ({
           kind: 'error',
         });
       } else {
+        clearTypingTimer();
+        typingPhaseRef.current = 'none';
+        lastTypingSentRef.current = 0;
         if (useSettingsStore.getState().effective('chat.send_typing_notifications') !== false) {
           socketSend({ type: 'typing', networkId, target, state: 'done' });
         }
@@ -469,6 +560,7 @@ export const MessageInput: React.FC<MessageInputProps> = ({
       threadRootMsgid,
       threadRootMessageId,
       updateText,
+      clearTypingTimer,
       onSent,
     ],
   );
@@ -706,6 +798,38 @@ export const MessageInput: React.FC<MessageInputProps> = ({
     [handleFiles],
   );
 
+  const insertMircFormatting = useCallback(
+    (openCode: string, closeCode = openCode) => {
+      const el = textareaRef.current;
+      const current = textRef.current;
+      const selStart = el?.selectionStart ?? current.length;
+      const selEnd = el?.selectionEnd ?? current.length;
+      const res = applyIrcControlAtSelection({
+        text: current,
+        selectionStart: selStart,
+        selectionEnd: selEnd,
+        openCode,
+        closeCode,
+      });
+      updateText(res.text);
+      requestAnimationFrame(() => {
+        const targetEl = textareaRef.current;
+        if (!targetEl) return;
+        targetEl.focus();
+        targetEl.setSelectionRange(res.selectionStart, res.selectionEnd);
+      });
+    },
+    [updateText],
+  );
+
+  const insertMircColor = useCallback(
+    (fg: number | null, bg: number | null = null) => {
+      const code = formatMircColorCode(fg, bg);
+      insertMircFormatting(code, IRC_COLOR);
+    },
+    [insertMircFormatting],
+  );
+
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
       // Suggestions navigation
@@ -800,11 +924,76 @@ export const MessageInput: React.FC<MessageInputProps> = ({
         return;
       }
 
-      // Escape cancels reply
-      if (e.key === 'Escape' && reply) {
+      // mIRC text formatting & color picker shortcuts
+      const mod = e.ctrlKey || e.metaKey;
+      const lowerKey = e.key.toLowerCase();
+      if (
+        !e.altKey &&
+        lowerKey === 'k' &&
+        ((mod && e.shiftKey) || (e.ctrlKey && !e.metaKey && !e.shiftKey))
+      ) {
         e.preventDefault();
-        useRepliesStore.getState().cancel(replyKey);
+        setMenuOpen(false);
+        setFormatOpen((prev) => !prev);
         return;
+      }
+      if (mod && !e.altKey && !e.shiftKey) {
+        if (lowerKey === 'b') {
+          e.preventDefault();
+          insertMircFormatting(IRC_BOLD);
+          return;
+        }
+        if (lowerKey === 'i') {
+          e.preventDefault();
+          insertMircFormatting(IRC_ITALIC);
+          return;
+        }
+        if (lowerKey === 'u') {
+          e.preventDefault();
+          insertMircFormatting(IRC_UNDERLINE);
+          return;
+        }
+      }
+      if (mod && e.shiftKey && !e.altKey) {
+        if (lowerKey === 's') {
+          e.preventDefault();
+          insertMircFormatting(IRC_STRIKE);
+          return;
+        }
+        if (lowerKey === 'r') {
+          e.preventDefault();
+          insertMircFormatting(IRC_REVERSE);
+          return;
+        }
+        if (lowerKey === 'o') {
+          e.preventDefault();
+          insertMircFormatting(IRC_RESET, '');
+          return;
+        }
+      }
+      if (e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey && lowerKey === 'o') {
+        e.preventDefault();
+        insertMircFormatting(IRC_RESET, '');
+        return;
+      }
+
+      // Escape closes popovers or cancels reply
+      if (e.key === 'Escape') {
+        if (formatOpen) {
+          e.preventDefault();
+          setFormatOpen(false);
+          return;
+        }
+        if (menuOpen) {
+          e.preventDefault();
+          setMenuOpen(false);
+          return;
+        }
+        if (reply) {
+          e.preventDefault();
+          useRepliesStore.getState().cancel(replyKey);
+          return;
+        }
       }
 
       // History recall (ArrowUp/ArrowDown when single line / at edge)
@@ -860,6 +1049,9 @@ export const MessageInput: React.FC<MessageInputProps> = ({
       netState?.nick,
       network?.nick,
       isIgnored,
+      formatOpen,
+      menuOpen,
+      insertMircFormatting,
       reply,
       replyKey,
       updateText,
@@ -921,6 +1113,11 @@ export const MessageInput: React.FC<MessageInputProps> = ({
         }
       }}
     >
+      {/* Incoming typing indicator */}
+      {!threadRootMsgid && !isServerBuffer && (
+        <TypingIndicator networkId={networkId} target={target} />
+      )}
+
       {/* Reply Banner */}
       {reply && !threadRootMsgid && (
         <div className="mb-1.5 flex items-center justify-between gap-2 rounded bg-[var(--bg-secondary)] px-2.5 py-1 text-xs border-l-2 border-[var(--accent)]">
@@ -1178,6 +1375,44 @@ export const MessageInput: React.FC<MessageInputProps> = ({
         </div>
       )}
 
+      {/* Live mIRC Formatting Preview */}
+      {hasIrcFormatting(text) && (
+        <div
+          data-testid="mirc-live-preview"
+          className="mb-1.5 flex items-center justify-between gap-2 rounded bg-[var(--bg-secondary)] px-2.5 py-1 text-xs border border-[var(--border)]"
+        >
+          <div className="flex items-center gap-2 min-w-0 flex-1 overflow-hidden">
+            <span className="shrink-0 text-[10px] uppercase tracking-wider text-[var(--text-muted)] font-semibold">
+              Preview
+            </span>
+            <div className="min-w-0 truncate text-sm text-[var(--text-primary)]">
+              <LinkedText text={applySpoilerMarkup(text)} networkId={networkId} />
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => updateText(stripIrcFormatting(textRef.current))}
+            className="shrink-0 rounded px-1.5 py-0.5 text-[10px] text-[var(--text-muted)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+            title="Strip all mIRC formatting codes"
+          >
+            Clear
+          </button>
+        </div>
+      )}
+
+      {/* mIRC Formatting & Color Picker Popover */}
+      <div ref={formatRef}>
+        <MircFormatPopover
+          open={formatOpen}
+          onClose={() => setFormatOpen(false)}
+          onApplyStyle={(code) =>
+            insertMircFormatting(code, code === IRC_RESET || code === IRC_COLOR ? '' : code)
+          }
+          onApplyColor={(fg, bg) => insertMircColor(fg, bg)}
+          onResetAll={() => insertMircFormatting(IRC_RESET, '')}
+        />
+      </div>
+
       {/* Main Composer Row */}
       <div className="flex items-end gap-2">
         <input
@@ -1194,10 +1429,13 @@ export const MessageInput: React.FC<MessageInputProps> = ({
         />
 
         <button
+          ref={attachBtnRef}
           type="button"
           disabled={!canUpload || !authUser}
           title={canUpload ? 'Attach or upload file' : uploadsOffTitle || 'Uploads disabled'}
+          aria-label="Attach or upload file"
           onClick={() => {
+            setFormatOpen(false);
             if (menuOpen) {
               setMenuOpen(false);
             } else {
@@ -1205,12 +1443,34 @@ export const MessageInput: React.FC<MessageInputProps> = ({
               useUploadsStore.getState().openMenu();
             }
           }}
-          className="shrink-0 rounded-lg p-2 text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] disabled:opacity-40 disabled:cursor-not-allowed"
+          style={{ width: '36px', height: '36px', padding: 0 }}
+          className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-transparent text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] disabled:opacity-40 disabled:cursor-not-allowed"
         >
           <Paperclip className="w-4 h-4" />
         </button>
 
-        <div className="relative flex-1">
+        <button
+          ref={formatBtnRef}
+          type="button"
+          disabled={isPaused}
+          title="Text formatting & mIRC colors (Ctrl+Shift+K)"
+          aria-label="Text formatting and mIRC colors"
+          aria-expanded={formatOpen}
+          onClick={() => {
+            setMenuOpen(false);
+            setFormatOpen((prev) => !prev);
+          }}
+          style={{ width: '36px', height: '36px', padding: 0 }}
+          className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-transparent transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
+            formatOpen
+              ? 'bg-[var(--accent)]/15 text-[var(--accent)] border-[var(--accent)]/40'
+              : 'text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]'
+          }`}
+        >
+          <Palette className="w-4 h-4" />
+        </button>
+
+        <div className="relative flex-1 flex">
           <textarea
             ref={textareaRef}
             rows={1}
@@ -1240,7 +1500,13 @@ export const MessageInput: React.FC<MessageInputProps> = ({
                 : `Message ${target}${canUpload ? ' (paste or drop files to upload)' : ''}`)
             }
             disabled={isPaused}
-            className="w-full resize-none rounded-lg border border-[var(--border)] bg-[var(--bg-secondary)] px-3 py-2 text-sm text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:border-[var(--accent)] focus:outline-none disabled:opacity-50"
+            style={{
+              display: 'block',
+              minHeight: '36px',
+              padding: '7px 12px',
+              lineHeight: '20px',
+            }}
+            className="block w-full resize-none rounded-lg border border-[var(--border)] bg-[var(--bg-secondary)] px-3 py-[7px] text-sm leading-5 text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:border-[var(--accent)] focus:outline-none disabled:opacity-50"
           />
           {estimatedLines > 1 && (
             <span className="absolute right-2 bottom-1.5 text-[10px] text-[var(--text-muted)] pointer-events-none">
@@ -1253,7 +1519,8 @@ export const MessageInput: React.FC<MessageInputProps> = ({
           type="button"
           disabled={(!text.trim() && !pendingUploads.some((p) => p.status === 'uploading')) || isPaused}
           onClick={() => void submitOrQueueSend(text)}
-          className="shrink-0 rounded-lg bg-[var(--accent)] p-2 text-white hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
+          style={{ width: '36px', height: '36px', padding: 0 }}
+          className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[var(--accent)] text-white hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
           title={
             sendWhenUploaded
               ? 'Sending once upload completes...'
@@ -1261,6 +1528,7 @@ export const MessageInput: React.FC<MessageInputProps> = ({
                 ? 'Send once upload completes'
                 : 'Send message'
           }
+          aria-label="Send message"
         >
           {sendWhenUploaded ? (
             <Loader2 className="w-4 h-4 animate-spin" />

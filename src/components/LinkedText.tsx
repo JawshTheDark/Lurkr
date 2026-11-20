@@ -15,6 +15,7 @@ interface Segment {
   italic?: boolean;
   underline?: boolean;
   strike?: boolean;
+  reverse?: boolean;
   mono?: boolean;
   fg?: string;
   bg?: string;
@@ -27,6 +28,7 @@ function parseIrcSegments(input: string, mircPalette: readonly string[]): Segmen
   let italic = false;
   let underline = false;
   let strike = false;
+  let reverse = false;
   let mono = false;
   let fg: string | undefined;
   let bg: string | undefined;
@@ -34,7 +36,7 @@ function parseIrcSegments(input: string, mircPalette: readonly string[]): Segmen
 
   const flush = () => {
     if (!buf) return;
-    out.push({ text: buf, bold, italic, underline, strike, mono, fg, bg });
+    out.push({ text: buf, bold, italic, underline, strike, reverse, mono, fg, bg });
     buf = '';
   };
 
@@ -52,20 +54,27 @@ function parseIrcSegments(input: string, mircPalette: readonly string[]): Segmen
     } else if (code === 0x1e) {
       flush();
       strike = !strike;
+    } else if (code === 0x16) {
+      flush();
+      reverse = !reverse;
     } else if (code === 0x11) {
       flush();
       mono = !mono;
     } else if (code === 0x0f) {
       flush();
-      bold = italic = underline = strike = mono = false;
+      bold = italic = underline = strike = reverse = mono = false;
       fg = bg = undefined;
     } else if (code === 0x03) {
       flush();
       const rest = input.slice(i + 1);
       const m = rest.match(/^(\d{1,2})(?:,(\d{1,2}))?/);
       if (m) {
-        fg = mircPalette[Number(m[1])];
-        if (m[2] !== undefined) bg = mircPalette[Number(m[2])];
+        const fgIdx = Number(m[1]);
+        fg = fgIdx >= 0 && fgIdx <= 15 ? mircPalette[fgIdx] : undefined;
+        if (m[2] !== undefined) {
+          const bgIdx = Number(m[2]);
+          bg = bgIdx >= 0 && bgIdx <= 15 ? mircPalette[bgIdx] : undefined;
+        }
         i += m[0].length;
       } else {
         fg = bg = undefined;
@@ -181,6 +190,8 @@ export const LinkedText: React.FC<LinkedTextProps> = ({ text, networkId }) => {
   return (
     <>
       {segments.map((seg, idx) => {
+        const fg = seg.reverse ? seg.bg ?? 'var(--bg)' : seg.fg;
+        const bg = seg.reverse ? seg.fg ?? 'var(--fg)' : seg.bg;
         const style: React.CSSProperties = {
           fontWeight: seg.bold ? 700 : undefined,
           fontStyle: seg.italic ? 'italic' : undefined,
@@ -189,8 +200,8 @@ export const LinkedText: React.FC<LinkedTextProps> = ({ text, networkId }) => {
               .filter(Boolean)
               .join(' ') || undefined,
           fontFamily: seg.mono ? 'var(--mono)' : undefined,
-          color: seg.fg,
-          backgroundColor: seg.bg,
+          color: fg,
+          backgroundColor: bg,
         };
         return (
           <span key={idx} style={style}>

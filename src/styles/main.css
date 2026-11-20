@@ -692,3 +692,40 @@ textarea::placeholder {
 .topic-scroll-track-active {
   animation: topic-hover-scroll var(--topic-scroll-duration, 6s) linear infinite;
 }
+
+.typing-dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.typing-dot {
+  width: 4px;
+  height: 4px;
+  border-radius: 9999px;
+  background: currentColor;
+  opacity: 0.45;
+}
+
+.typing-dot-active {
+  animation: typing-bounce 1.2s ease-in-out infinite;
+}
+.typing-dot-active:nth-child(2) {
+  animation-delay: 0.16s;
+}
+.typing-dot-active:nth-child(3) {
+  animation-delay: 0.32s;
+}
+
+@keyframes typing-bounce {
+  0%,
+  60%,
+  100% {
+    opacity: 0.35;
+    transform: translateY(0);
+  }
+  30% {
+    opacity: 1;
+    transform: translateY(-2px);
+  }
+}

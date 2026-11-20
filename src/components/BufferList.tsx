@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Brad Root
 // SPDX-License-Identifier: MPL-2.0
 
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   Bell,
   Bookmark,
@@ -33,6 +33,7 @@ import { useDccStore } from '../stores/dcc';
 import { useConfigStore } from '../stores/config';
 import { useAuthStore } from '../stores/auth';
 import { useIgnoresStore } from '../stores/ignores';
+import { useSettingsStore } from '../stores/settings';
 import { SYSTEM_KEY } from '../lib/virtualBuffers';
 import { socketSend } from '../services/socketBus';
 import { ContextMenu, type ContextMenuItem } from './ContextMenu';
@@ -71,6 +72,23 @@ export const BufferList: React.FC<BufferListProps> = ({
   const dccEnabled = useConfigStore((s) => s.features.dcc);
   const dccActiveCount = useDccStore((s) => s.activeCount());
   const isAdmin = useAuthStore((s) => s.isAdmin());
+  useIgnoresStore((s) => s.global);
+  useIgnoresStore((s) => s.byNetwork);
+  const isMemberIgnored = useIgnoresStore((s) => s.isMemberIgnored);
+  const showTyping = useSettingsStore(
+    (s) => s.effective('chat.show_typing_notifications') !== false,
+  );
+  const hasAnyTyping = useMemo(
+    () => Object.values(buffers).some((b) => Object.keys(b.typing || {}).length > 0),
+    [buffers],
+  );
+  const [typingNow, setTypingNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!hasAnyTyping || !showTyping) return;
+    setTypingNow(Date.now());
+    const timer = setInterval(() => setTypingNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [hasAnyTyping, showTyping]);
 
   const [collapsedNets, setCollapsedNets] = useState<Record<number, boolean>>({});
   const [ctx, setCtx] = useState<{
@@ -348,6 +366,40 @@ export const BufferList: React.FC<BufferListProps> = ({
         </span>
         {isPinned && <Pin size={11} style={{ color: 'var(--fg-muted)', flexShrink: 0 }} />}
         {hasDraft && <Pencil size={11} style={{ color: 'var(--accent)', flexShrink: 0 }} />}
+        {(() => {
+          if (!showTyping || buf.networkId === null || buf.target.startsWith(':')) return null;
+          const netId = buf.networkId;
+          const ownNick = states[netId]?.nick;
+          const entries = Object.entries(buf.typing || {}).filter(
+            ([nick, info]) =>
+              info &&
+              info.expiresAt > typingNow &&
+              (!ownNick || nick.toLowerCase() !== ownNick.toLowerCase()) &&
+              !isMemberIgnored(netId, buf.target, {
+                nick,
+                userhost: info.userhost ?? null,
+              }),
+          );
+          if (entries.length === 0) return null;
+          const active = entries.some(([, info]) => info.state === 'active');
+          const names = entries.map(([nick]) => nick).join(', ');
+          return (
+            <span
+              className="typing-dots"
+              data-testid="buffer-typing-dots"
+              title={active ? `${names} typing…` : `${names} entered text`}
+              aria-label={active ? `${names} typing` : `${names} entered text`}
+              style={{
+                flexShrink: 0,
+                color: active ? 'var(--accent)' : 'var(--fg-muted)',
+              }}
+            >
+              <span className={`typing-dot${active ? ' typing-dot-active' : ''}`} />
+              <span className={`typing-dot${active ? ' typing-dot-active' : ''}`} />
+              <span className={`typing-dot${active ? ' typing-dot-active' : ''}`} />
+            </span>
+          );
+        })()}
         {buf.highlighted > 0 ? (
           <span
             style={{

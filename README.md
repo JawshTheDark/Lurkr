@@ -8,7 +8,7 @@
 
 *Encrypted image preview caching · SHA-256 verified auto-updater · Theme Studio with 44 palettes & WCAG checks · Capability-aware IRCd Oper Control Center · Windows, macOS Universal & Linux builds*
 
-[![Release v2.6.4](https://img.shields.io/github/v/release/JawshTheDark/Lurkr?display_name=tag&style=for-the-badge&color=89b4fa)](https://github.com/JawshTheDark/Lurkr/releases)
+[![Latest Release](https://img.shields.io/github/v/release/JawshTheDark/Lurkr?display_name=tag&style=for-the-badge&color=89b4fa)](https://github.com/JawshTheDark/Lurkr/releases)
 [![CI Status](https://img.shields.io/github/actions/workflow/status/JawshTheDark/Lurkr/ci.yml?branch=main&label=Cross-Platform%20CI&style=for-the-badge)](https://github.com/JawshTheDark/Lurkr/actions/workflows/ci.yml)
 [![License: MPL-2.0](https://img.shields.io/badge/License-MPL--2.0-a6e3a1?style=for-the-badge)](https://opensource.org/licenses/MPL-2.0)
 [![Platforms](https://img.shields.io/badge/Platforms-Windows%20%7C%20macOS%20%7C%20Linux-cba6f7?style=for-the-badge)](#-download--install)
