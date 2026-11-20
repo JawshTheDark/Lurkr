@@ -5,6 +5,7 @@ import { contextBridge, ipcRenderer, webUtils } from 'electron';
 import type { DesktopMenuState, MenuActionPayload } from './menu.js';
 import type { TranscodeWebmResult } from './transcode.js';
 import type { CachedImageResult, EncryptedCacheStats } from './previewCache.js';
+import type { UpdateStateSnapshot } from './updater.js';
 
 export interface DesktopConfig {
   serverUrl: string;
@@ -77,5 +78,20 @@ contextBridge.exposeInMainWorld('lurkerDesktop', {
     clear: (): Promise<void> => ipcRenderer.invoke('lurker:preview-cache-clear'),
     configure: (opts: { enabled?: boolean; maxBytes?: number }): Promise<EncryptedCacheStats> =>
       ipcRenderer.invoke('lurker:preview-cache-configure', opts),
+  },
+  updater: {
+    getState: (): Promise<UpdateStateSnapshot> => ipcRenderer.invoke('lurker:updater-state'),
+    check: (): Promise<UpdateStateSnapshot> => ipcRenderer.invoke('lurker:updater-check'),
+    download: (): Promise<UpdateStateSnapshot> => ipcRenderer.invoke('lurker:updater-download'),
+    install: (): Promise<UpdateStateSnapshot> => ipcRenderer.invoke('lurker:updater-install'),
+    setAutoCheck: (enabled: boolean): Promise<UpdateStateSnapshot> =>
+      ipcRenderer.invoke('lurker:updater-set-auto-check', enabled),
+    openReleasePage: (): Promise<void> => ipcRenderer.invoke('lurker:updater-open-release'),
+    onState: (cb: (state: UpdateStateSnapshot) => void): (() => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, snapshot: UpdateStateSnapshot) =>
+        cb(snapshot);
+      ipcRenderer.on('lurker:updater-state', handler);
+      return () => ipcRenderer.removeListener('lurker:updater-state', handler);
+    },
   },
 });

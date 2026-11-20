@@ -506,6 +506,7 @@ const child = spawn(binaryPath, electronArgs, {
     ...process.env,
     HOME: tempHome,
     XDG_CONFIG_HOME: path.join(tempHome, '.config'),
+    LURKR_DISABLE_UPDATE_CHECK: '1',
   },
   stdio: ['ignore', 'pipe', 'pipe'],
 });

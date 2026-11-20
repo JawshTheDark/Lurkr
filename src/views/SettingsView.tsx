@@ -4,6 +4,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { EncryptedPreviewCachePanel } from '../components/EncryptedPreviewCachePanel';
+import { DesktopUpdaterPanel } from '../components/DesktopUpdaterPanel';
 import {
   ArrowLeft,
   Palette,
@@ -17,6 +18,7 @@ import {
   Sliders,
   Radio,
   Terminal,
+  RefreshCw,
 } from 'lucide-react';
 import { ThemeStudio } from '../components/ThemeStudio';
 import { ColorListEditor, SmartColorControl } from '../components/SmartColorControl';
@@ -318,6 +320,7 @@ export const SettingsView: React.FC = () => {
             { id: '_security', label: 'Security & Passkeys', icon: Shield },
             { id: '_export', label: 'Data Export / Import', icon: Download },
             { id: '_connection', label: 'Server Connection', icon: Server },
+            { id: '_updates', label: 'Desktop Updates', icon: RefreshCw },
           ].map((item) => {
             const Icon = item.icon;
             return (
@@ -784,6 +787,13 @@ export const SettingsView: React.FC = () => {
                   Save Connection
                 </button>
               </form>
+            </div>
+          )}
+
+          {section === '_updates' && (
+            <div className="space-y-4">
+              <h2 className="text-lg font-semibold">Desktop Updates</h2>
+              <DesktopUpdaterPanel />
             </div>
           )}
 

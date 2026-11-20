@@ -13,6 +13,7 @@ import {
   Terminal,
 } from 'lucide-react';
 import { AppModal } from './AppModal';
+import { DesktopUpdaterPanel } from './DesktopUpdaterPanel';
 import { getServerUrl, type DesktopAppInfo } from '../api';
 import { useAuthStore } from '../stores/auth';
 import { useConfigStore } from '../stores/config';
@@ -238,6 +239,7 @@ export const AboutModal: React.FC = () => {
                 </>
               )}
             </div>
+            <DesktopUpdaterPanel compact />
           </div>
         ) : (
           <div className="space-y-3">

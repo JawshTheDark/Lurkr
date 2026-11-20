@@ -25,6 +25,7 @@ import {
 } from './menu.js';
 import { transcodeWebmFile, type TranscodeWebmRequest } from './transcode.js';
 import { EncryptedPreviewCache } from './previewCache.js';
+import { DesktopUpdater } from './updater.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const isDev = process.env.LURKER_DEV === '1';
@@ -161,6 +162,7 @@ interface WindowState {
 interface DesktopConfig {
   serverUrl: string;
   allowSelfSigned: boolean;
+  autoCheckUpdates?: boolean;
 }
 
 function getConfigPath(): string {
@@ -175,6 +177,7 @@ function loadConfig(): DesktopConfig {
   const fallback: DesktopConfig = {
     serverUrl: process.env.LURKER_SERVER_URL || '',
     allowSelfSigned: false,
+    autoCheckUpdates: true,
   };
   try {
     const raw = fs.readFileSync(getConfigPath(), 'utf8');
@@ -184,6 +187,7 @@ function loadConfig(): DesktopConfig {
         ? parsed.serverUrl.trim().replace(/\/+$/, '')
         : fallback.serverUrl,
       allowSelfSigned: Boolean(parsed.allowSelfSigned),
+      autoCheckUpdates: parsed.autoCheckUpdates !== false,
     };
   } catch {
     return fallback;
@@ -582,6 +586,10 @@ app.whenReady().then(() => {
         typeof next.allowSelfSigned === 'boolean'
           ? next.allowSelfSigned
           : desktopConfig.allowSelfSigned,
+      autoCheckUpdates:
+        typeof next.autoCheckUpdates === 'boolean'
+          ? next.autoCheckUpdates
+          : desktopConfig.autoCheckUpdates,
     };
     saveConfig(desktopConfig);
     return desktopConfig;
@@ -719,6 +727,50 @@ app.whenReady().then(() => {
     (_event, opts: { enabled?: boolean; maxBytes?: number }) => previewCache.configure(opts || {}),
   );
 
+  const updater = new DesktopUpdater({
+    currentVersion: app.getVersion(),
+    updatesDir: path.join(app.getPath('userData'), 'updates'),
+    autoCheck: desktopConfig.autoCheckUpdates !== false,
+    fetchImpl: (url, init) =>
+      session.defaultSession.fetch(url, {
+        cache: 'no-store',
+        headers: init?.headers,
+        signal: init?.signal,
+      }),
+    onStateChange: (snapshot) => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('lurker:updater-state', snapshot);
+      }
+    },
+    onPersistAutoCheck: (enabled) => {
+      desktopConfig = { ...desktopConfig, autoCheckUpdates: enabled };
+      saveConfig(desktopConfig);
+    },
+    relaunchAndQuit: (targetExecPath) => {
+      if (targetExecPath) {
+        app.relaunch({ execPath: targetExecPath });
+      } else {
+        app.relaunch();
+      }
+      app.exit(0);
+    },
+    quitApp: () => {
+      app.exit(0);
+    },
+    openPath: (targetPath) => shell.openPath(targetPath),
+    showItemInFolder: (targetPath) => shell.showItemInFolder(targetPath),
+    openExternal: (url) => openExternalSafe(url),
+  });
+
+  ipcMain.handle('lurker:updater-state', () => updater.getState());
+  ipcMain.handle('lurker:updater-check', () => updater.checkForUpdates());
+  ipcMain.handle('lurker:updater-download', () => updater.downloadUpdate());
+  ipcMain.handle('lurker:updater-install', () => updater.installUpdate());
+  ipcMain.handle('lurker:updater-set-auto-check', (_event, enabled: boolean) =>
+    updater.setAutoCheck(Boolean(enabled)),
+  );
+  ipcMain.handle('lurker:updater-open-release', () => updater.openReleasePage());
+
   app.on('will-quit', () => {
     void previewCache.dispose();
   });
@@ -733,6 +785,16 @@ app.whenReady().then(() => {
     }
   }
   createWindow();
+
+  if (
+    desktopConfig.autoCheckUpdates !== false &&
+    !isDev &&
+    process.env.LURKR_DISABLE_UPDATE_CHECK !== '1'
+  ) {
+    setTimeout(() => {
+      void updater.checkForUpdates();
+    }, 6_000).unref();
+  }
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();

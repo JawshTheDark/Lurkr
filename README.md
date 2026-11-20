@@ -6,9 +6,9 @@
 
 **Cross-Platform Electron + React Desktop Client for [Lurker IRC](https://github.com/amiantos/lurker)**
 
-*Encrypted image preview caching · Theme Studio with 44 palettes & WCAG checks · Capability-aware IRCd Oper Control Center · Windows, macOS Universal & Linux builds*
+*Encrypted image preview caching · SHA-256 verified auto-updater · Theme Studio with 44 palettes & WCAG checks · Capability-aware IRCd Oper Control Center · Windows, macOS Universal & Linux builds*
 
-[![Release v2.6.3](https://img.shields.io/github/v/release/JawshTheDark/Lurkr?display_name=tag&style=for-the-badge&color=89b4fa)](https://github.com/JawshTheDark/Lurkr/releases)
+[![Release v2.6.4](https://img.shields.io/github/v/release/JawshTheDark/Lurkr?display_name=tag&style=for-the-badge&color=89b4fa)](https://github.com/JawshTheDark/Lurkr/releases)
 [![CI Status](https://img.shields.io/github/actions/workflow/status/JawshTheDark/Lurkr/ci.yml?branch=main&label=Cross-Platform%20CI&style=for-the-badge)](https://github.com/JawshTheDark/Lurkr/actions/workflows/ci.yml)
 [![License: MPL-2.0](https://img.shields.io/badge/License-MPL--2.0-a6e3a1?style=for-the-badge)](https://opensource.org/licenses/MPL-2.0)
 [![Platforms](https://img.shields.io/badge/Platforms-Windows%20%7C%20macOS%20%7C%20Linux-cba6f7?style=for-the-badge)](#-download--install)
@@ -65,8 +65,9 @@
 - **Uploads, Clipboard Paste & Video Transcoding**: Paste screenshots directly (`Ctrl/Cmd + V`) or drag-and-drop files; optional desktop FFmpeg (`electron/transcode.ts`) automatically converts odd-dimension VFR `.webm` recordings into H.264/yuv420p `.mp4` or AAC `.m4a` before upload.
 - **Channel E2EE, Relay Unwrapping & DCC**: Built-in support for encrypted channel toggles, Relay / Janus bot formatting extraction, DCC chat/file transfers (`/dcc`, `/xdcc`), and interactive Desktop Sheep (`src/lib/sheep/`).
 
-### 🔒 Security & Privacy
+### 🔒 Security, Privacy & Auto-Updates
 - **Encrypted At-Rest Image Preview Cache**: Previews and resolved `LinkPreview` metadata are encrypted with **AES-256-GCM** using OS keyring-sealed master keys (`safeStorage`), bypassing Chromium's plaintext HTTP disk cache.
+- **Cross-Platform Desktop Auto-Updater**: Checks GitHub Releases on launch or on demand (**Help / App Menu → Check for Updates…**, **About Lurkr**, or **Settings → Desktop Updates**), selects the matching Windows NSIS/Portable, macOS Universal `.zip`/`.dmg`, or Linux AppImage/`.tar.gz` bundle, verifies downloads against `SHA256SUMS.txt`, and supports one-click **Install & Restart**.
 - **Passkeys & Password Auth**: Supports WebAuthn passkeys (`@simplewebauthn/browser`), password login/changes, admin first-run setup, account recovery, and OAuth authorization views.
 - **Desktop Network Bridge**: Transparently handles Electron `file://` origin cookies (`SameSite`/`Secure` normalization) and optional per-server self-signed TLS certificate acceptance without relaxing global browser security.
 
@@ -176,7 +177,7 @@ npm run dev
 # Typecheck renderer (tsconfig.json) & Electron main/preload (tsconfig.electron.json)
 npm run typecheck
 
-# Run full Vitest suite (19 test files, 80 unit & component tests)
+# Run full Vitest suite (20 test files, 85 unit & component tests)
 npm test
 
 # Production build (renderer + dist-electron)
@@ -207,7 +208,8 @@ Lurkr/
 │   ├── menu.ts                    # Native cross-platform app & dynamic Oper menus
 │   ├── preload.ts                 # Context-isolated window.lurkerDesktop API
 │   ├── previewCache.ts            # EncryptedPreviewCache (AES-256-GCM + safeStorage)
-│   └── transcode.ts               # WebM -> H.264/AAC FFmpeg converter
+│   ├── transcode.ts               # WebM -> H.264/AAC FFmpeg converter
+│   └── updater.ts                 # GitHub Releases updater with SHA256SUMS verification
 ├── public/                        # App icons, audio cues, avatar sets & sheep sprites
 ├── scripts/
 │   ├── install-linux.sh           # User-local Linux desktop & XDG installer
@@ -221,7 +223,7 @@ Lurkr/
     ├── services/                  # WebSocket client, socketBus, notifications
     ├── shared/                    # Settings registry, IRC mode parsers, relay/e2ee helpers
     ├── stores/                    # Zustand stores (auth, buffers, networks, themes, oper...)
-    ├── test/                      # 19 Vitest test suites (80 tests)
+    ├── test/                      # 20 Vitest test suites (85 tests)
     └── views/                     # ChatView, SettingsView, LoginView, AdminView, etc.
 ```
 

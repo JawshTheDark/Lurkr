@@ -744,6 +744,10 @@ export function buildApplicationMenu({
         click: () => onAction('help:about'),
       },
       {
+        label: 'Check for Updates…',
+        click: () => onAction('help:check-updates'),
+      },
+      {
         label: 'Server & IRC Network Info…',
         click: () => onAction('help:network-info'),
       },
@@ -781,6 +785,7 @@ export function buildApplicationMenu({
       label: app.name || 'Lurkr',
       submenu: [
         { label: 'About Lurkr…', click: () => onAction('help:about') },
+        { label: 'Check for Updates…', click: () => onAction('help:check-updates') },
         { type: 'separator' },
         {
           label: 'Settings & Preferences…',

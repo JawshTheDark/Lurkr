@@ -20,6 +20,7 @@ import { useSettingsStore } from '../stores/settings';
 import { useSearchStore } from '../stores/search';
 import { useThemesStore } from '../stores/themes';
 import { useToastsStore } from '../stores/toasts';
+import { useUpdaterStore } from '../stores/updater';
 import { useDesktopUiStore, type IrcPromptKind } from '../stores/desktopUi';
 import { cycleActiveBuffer } from '../utils/cycleBuffers';
 
@@ -166,6 +167,10 @@ export function useDesktopMenuBridge(): void {
     lastSignatureRef.current = sig;
     void updateMenuState(menuState).catch(() => {});
   }, [menuState]);
+
+  useEffect(() => {
+    return useUpdaterStore.getState().init();
+  }, []);
 
   useEffect(() => {
     const onMenuAction = window.lurkerDesktop?.onMenuAction;
@@ -352,6 +357,10 @@ export function useDesktopMenuBridge(): void {
           break;
         case 'help:about':
           ui.openAbout('program');
+          break;
+        case 'help:check-updates':
+          ui.openAbout('program');
+          void useUpdaterStore.getState().checkForUpdates();
           break;
         case 'help:network-info':
           ui.openAbout('network');

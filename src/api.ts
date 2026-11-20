@@ -89,6 +89,46 @@ export interface CachedImageResult {
   error?: string;
 }
 
+export type UpdaterStatus =
+  | 'idle'
+  | 'checking'
+  | 'available'
+  | 'up-to-date'
+  | 'downloading'
+  | 'downloaded'
+  | 'installing'
+  | 'error';
+
+export type InstallMode =
+  | 'win-nsis'
+  | 'win-portable'
+  | 'mac-zip'
+  | 'mac-dmg'
+  | 'linux-appimage'
+  | 'linux-tar'
+  | 'manual';
+
+export interface UpdateStateSnapshot {
+  status: UpdaterStatus;
+  currentVersion: string;
+  latestVersion: string | null;
+  releaseName: string | null;
+  releaseNotes: string | null;
+  releaseUrl: string | null;
+  publishedAt: string | null;
+  assetName: string | null;
+  installMode: InstallMode;
+  autoInstallSupported: boolean;
+  sha256Verified: boolean;
+  downloadedPath: string | null;
+  downloadedBytes: number;
+  totalBytes: number;
+  percent: number;
+  autoCheck: boolean;
+  checkedAt: number | null;
+  error: string | null;
+}
+
 export interface DesktopBridge {
   isElectron: boolean;
   platform: string;
@@ -118,6 +158,15 @@ export interface DesktopBridge {
     stats: () => Promise<EncryptedCacheStats>;
     clear: () => Promise<void>;
     configure: (opts: { enabled?: boolean; maxBytes?: number }) => Promise<EncryptedCacheStats>;
+  };
+  updater?: {
+    getState: () => Promise<UpdateStateSnapshot>;
+    check: () => Promise<UpdateStateSnapshot>;
+    download: () => Promise<UpdateStateSnapshot>;
+    install: () => Promise<UpdateStateSnapshot>;
+    setAutoCheck: (enabled: boolean) => Promise<UpdateStateSnapshot>;
+    openReleasePage: () => Promise<void>;
+    onState: (cb: (state: UpdateStateSnapshot) => void) => () => void;
   };
 }
 
