@@ -26,6 +26,7 @@ import { COLOR_VARS } from '../hooks/useTheme';
 import { useSettingsStore } from '../stores/settings';
 import { useThemesStore } from '../stores/themes';
 import { useAuthStore } from '../stores/auth';
+import { useConfigStore } from '../stores/config';
 import { useHighlightRulesStore } from '../stores/highlightRules';
 import { useDataExportStore } from '../stores/dataExport';
 import { useAliasesStore } from '../stores/aliases';
@@ -69,6 +70,8 @@ export const SettingsView: React.FC = () => {
   const relayBotsByKey = useRelayBotsStore((s) => s.byKey);
   const exportJob = useDataExportStore((s) => s.job);
   const importing = useDataExportStore((s) => s.importing);
+  const configChecked = useConfigStore((s) => s.checked);
+  const linkPreviewsEnabled = useConfigStore((s) => s.features.linkPreviews);
 
   const [section, setSection] = useState<SectionId>(CATEGORIES[0]?.id || '_themes');
   const requestedSettingsSection = useDesktopUiStore((s) => s.requestedSettingsSection);
@@ -865,6 +868,46 @@ export const SettingsView: React.FC = () => {
                     </div>
                   );
                 })}
+                {section === 'appearance' && (optionsByCategory['avatars']?.length ?? 0) > 0 && (
+                  <div className="pt-2 space-y-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <h3 className="text-sm font-semibold text-[var(--text-primary)]">
+                        Avatars
+                      </h3>
+                      {configChecked && !linkPreviewsEnabled && (
+                        <p
+                          data-testid="avatars-need-previews-note"
+                          className="text-xs text-[var(--text-muted)]"
+                        >
+                          To display avatars, you need <code>lurker-previews</code>.
+                        </p>
+                      )}
+                    </div>
+                    {(optionsByCategory['avatars'] || []).map((opt) => (
+                      <div
+                        key={opt.key}
+                        className="rounded-xl border border-[var(--border)] bg-[var(--bg-secondary)] p-3.5 space-y-2"
+                      >
+                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                          <div>
+                            <div className="text-sm font-medium text-[var(--text-primary)]">
+                              {opt.label}
+                            </div>
+                            <div className="text-[11px] font-mono text-[var(--text-muted)]">
+                              {opt.key}
+                            </div>
+                          </div>
+                          <div>{renderSettingControl(opt)}</div>
+                        </div>
+                        {opt.description && (
+                          <p className="text-xs text-[var(--text-secondary)]">
+                            {opt.description}
+                          </p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
           )}

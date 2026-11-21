@@ -107,7 +107,7 @@ export function missingRequired(
 }
 
 // What the upload route accepts: images, text, and the media we can strip metadata
-// from (mp4/mov/m4v/m4a/m4b/3gp/3g2/webm/mp3/ogg/opus/ogv/flac/wav — see
+// from (mp4/mov/m4v/m4a/m4b/3gp/3g2/mp3/webm/mkv/ogg/opus/flac/wav — see
 // server/services/contentClass.ts).
 //
 // This is the file PICKER's `accept` attribute, and nothing else. The drop and paste
@@ -142,6 +142,7 @@ export const ACCEPTED_FILE_TYPES = [
   'video/3gpp',
   'video/3gpp2',
   'video/webm',
+  'video/x-matroska',
   'video/ogg',
   'audio/mpeg',
   'audio/mp4',
@@ -164,11 +165,14 @@ export const ACCEPTED_FILE_TYPES = [
   '.3gp',
   '.3g2',
   '.webm',
+  '.mkv',
+  '.mka',
   '.ogv',
   '.mp3',
   '.ogg',
   '.oga',
   '.opus',
+  '.spx',
   '.flac',
   '.wav',
 ].join(',');
@@ -192,9 +196,27 @@ export const CAMERA_CAPTURE_TYPES = [
 
 // Deliberately LOOSER than the accepted set: the drop/paste gates exist to ignore
 // things that obviously aren't uploads, not to enforce policy. The server is the
-// gate, and its 415 names the problem ("video/matroska files are not accepted — Lurker takes
+// gate, and its 415 names the problem ("avi files are not accepted — Lurker takes
 // …"), which is far more useful than a drop that silently does nothing — the bug
 // this replaces.
+const MEDIA_FALLBACK_EXTENSIONS = [
+  '.webm',
+  '.mkv',
+  '.mka',
+  '.ogg',
+  '.oga',
+  '.ogv',
+  '.opus',
+  '.spx',
+  '.flac',
+  '.wav',
+];
+
+function hasMediaFallbackExtension(filename: string): boolean {
+  const lower = filename.trim().toLowerCase();
+  return MEDIA_FALLBACK_EXTENSIONS.some((ext) => lower.endsWith(ext));
+}
+
 export function isWebmFile(mime: string | null | undefined, filename = ''): boolean {
   const baseMime = (mime || '').split(';')[0].trim().toLowerCase();
   if (baseMime === 'video/webm' || baseMime === 'audio/webm') return true;
@@ -227,7 +249,7 @@ export function isUploadableType(mime: string, filename = ''): boolean {
   // a stray `.dmg` drag should still do nothing, not start an upload that 415s. Same
   // shared table the server labels from, so the two can't drift.
   if (!mime || mime === 'application/octet-stream') {
-    return hasTextDialectExtension(filename) || isWebmFile(mime, filename);
+    return hasTextDialectExtension(filename) || hasMediaFallbackExtension(filename);
   }
   return false;
 }

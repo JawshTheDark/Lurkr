@@ -29,7 +29,7 @@ export type MediaKind = 'image' | 'video' | 'audio' | 'text';
 // <video> when it happens to be audio-only.
 const EXTENSIONS: Record<MediaKind, readonly string[]> = {
   image: ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.avif', '.bmp'],
-  video: ['.mp4', '.mov', '.m4v', '.webm', '.ogv', '.3gp', '.3g2'],
+  video: ['.mp4', '.mov', '.m4v', '.webm', '.mkv', '.ogv', '.3gp', '.3g2'],
   audio: ['.mp3', '.m4a', '.ogg', '.oga', '.opus', '.wav', '.flac'],
   // ⚠ `.md` and `.json` are deliberately ABSENT, though the uploader mints both
   // (#788). This table judges ARBITRARY chat links by extension, and those two are

@@ -88,6 +88,7 @@ export interface BufferMessage {
   nick?: string;
   body?: string;
   createdAt?: string;
+  sentTo?: { target: string; text: string };
   [key: string]: unknown;
 }
 

@@ -29,6 +29,7 @@ import { useDesktopUiStore } from '../stores/desktopUi';
 import { useAliasesStore } from '../stores/aliases';
 import { socketSend, socketSendWithAck } from '../services/socketBus';
 import { dispatchSlashCommand, SLASH_COMMANDS } from '../lib/commands/dispatch';
+import { usageHint, usageVerb, type UsageHint } from '../lib/commands/usageHint';
 import { isChannelTarget } from '../shared/channels';
 import {
   buildCapabilityContext,
@@ -44,7 +45,7 @@ import {
 } from '../utils/emojiShortcodes';
 import { insertWithPadding } from '../utils/insertAtCaret';
 import { byteLen, chunkCountForSay, textBudgetFor } from '../utils/messageSplit';
-import { ensureUploadFilename, pastedUploadFiles } from '../utils/uploaders';
+import { ACCEPTED_FILE_TYPES, ensureUploadFilename, pastedUploadFiles } from '../utils/uploaders';
 import {
   IRC_BOLD,
   IRC_ITALIC,
@@ -128,6 +129,8 @@ export const MessageInput: React.FC<MessageInputProps> = ({
   const historyIdxRef = useRef<number>(-1);
 
   const [text, setText] = useState(draft);
+  const [caretPos, setCaretPos] = useState(draft.length);
+  const [usageDismissedFor, setUsageDismissedFor] = useState<string | null>(null);
   const textRef = useRef(text);
   const [dragOver, setDragOver] = useState(false);
   const [longModalOpen, setLongModalOpen] = useState(false);
@@ -202,6 +205,8 @@ export const MessageInput: React.FC<MessageInputProps> = ({
     const initial = threadRootMsgid ? '' : useDraftStore.getState().forBuffer(networkId, target);
     textRef.current = initial;
     setText(initial);
+    setCaretPos(initial.length);
+    setUsageDismissedFor(null);
     tabStateRef.current = null;
     historyIdxRef.current = -1;
   }, [networkId, target, threadRootMsgid]);
@@ -287,9 +292,14 @@ export const MessageInput: React.FC<MessageInputProps> = ({
   }, [menuOpen, formatOpen]);
 
   const updateText = useCallback(
-    (next: string, opts?: { suppressTyping?: boolean }) => {
+    (next: string, opts?: { suppressTyping?: boolean; caret?: number }) => {
       textRef.current = next;
       setText(next);
+      const nextCaret =
+        opts?.caret ?? Math.min(textareaRef.current?.selectionStart ?? next.length, next.length);
+      setCaretPos(nextCaret);
+      const nextVerb = usageVerb(next);
+      setUsageDismissedFor((prev) => (prev && prev === nextVerb ? prev : null));
       tabStateRef.current = null;
       if (!threadRootMsgid) {
         useDraftStore.getState().setDraft(networkId, target, next);
@@ -367,7 +377,7 @@ export const MessageInput: React.FC<MessageInputProps> = ({
   // Suggestions (slash commands, :emoji:, @nick)
   const suggestions = useMemo<SuggestItem[]>(() => {
     const el = textareaRef.current;
-    const caret = el?.selectionStart ?? text.length;
+    const caret = Math.min(el?.selectionStart ?? caretPos, text.length);
 
     // 1. Slash command at start of input
     if (text.startsWith('/') && !text.slice(0, caret).includes(' ') && !text.includes('\n')) {
@@ -431,7 +441,23 @@ export const MessageInput: React.FC<MessageInputProps> = ({
     }
 
     return [];
-  }, [text, availableSlashCommands, emojiTable, emojiNames, buffer, netState?.nick, network?.nick, isIgnored]);
+  }, [
+    text,
+    caretPos,
+    availableSlashCommands,
+    emojiTable,
+    emojiNames,
+    buffer,
+    netState?.nick,
+    network?.nick,
+    isIgnored,
+  ]);
+
+  const activeVerb = usageVerb(text);
+  const usage = useMemo<UsageHint | null>(() => {
+    if (activeVerb === null || usageDismissedFor === activeVerb) return null;
+    return usageHint(text, caretPos, availableSlashCommands, aliases, isServerBuffer);
+  }, [activeVerb, usageDismissedFor, text, caretPos, availableSlashCommands, aliases, isServerBuffer]);
 
   useEffect(() => {
     setSuggestIdx(0);
@@ -448,7 +474,7 @@ export const MessageInput: React.FC<MessageInputProps> = ({
         next = text.slice(0, item.start) + item.insert + text.slice(item.end);
         newCaret = item.start + item.insert.length;
       }
-      updateText(next);
+      updateText(next, { caret: newCaret });
       requestAnimationFrame(() => {
         if (textareaRef.current) {
           textareaRef.current.focus();
@@ -869,6 +895,7 @@ export const MessageInput: React.FC<MessageInputProps> = ({
           ts.end = ts.start + inserted.length;
           textRef.current = next;
           setText(next);
+          setCaretPos(ts.end);
           if (!threadRootMsgid) useDraftStore.getState().setDraft(networkId, target, next);
           requestAnimationFrame(() => el.setSelectionRange(ts.end, ts.end));
           return;
@@ -919,6 +946,7 @@ export const MessageInput: React.FC<MessageInputProps> = ({
         };
         textRef.current = next;
         setText(next);
+        setCaretPos(newEnd);
         if (!threadRootMsgid) useDraftStore.getState().setDraft(networkId, target, next);
         requestAnimationFrame(() => el.setSelectionRange(newEnd, newEnd));
         return;
@@ -977,8 +1005,14 @@ export const MessageInput: React.FC<MessageInputProps> = ({
         return;
       }
 
-      // Escape closes popovers or cancels reply
+      // Escape dismisses command usage line / closes popovers / cancels reply
       if (e.key === 'Escape') {
+        const curVerb = usageVerb(textRef.current);
+        if (usage || (suggestions.length > 0 && curVerb)) {
+          e.preventDefault();
+          if (curVerb) setUsageDismissedFor(curVerb);
+          return;
+        }
         if (formatOpen) {
           e.preventDefault();
           setFormatOpen(false);
@@ -1049,6 +1083,7 @@ export const MessageInput: React.FC<MessageInputProps> = ({
       netState?.nick,
       network?.nick,
       isIgnored,
+      usage,
       formatOpen,
       menuOpen,
       insertMircFormatting,
@@ -1070,7 +1105,7 @@ export const MessageInput: React.FC<MessageInputProps> = ({
         const glyph = emojiTable[completed.name];
         const next = val.slice(0, completed.start) + glyph + val.slice(completed.end);
         const newCaret = completed.start + glyph.length;
-        updateText(next);
+        updateText(next, { caret: newCaret });
         requestAnimationFrame(() => {
           if (textareaRef.current) {
             textareaRef.current.setSelectionRange(newCaret, newCaret);
@@ -1078,7 +1113,7 @@ export const MessageInput: React.FC<MessageInputProps> = ({
         });
         return;
       }
-      updateText(val);
+      updateText(val, { caret });
     },
     [emojiTable, updateText],
   );
@@ -1239,31 +1274,61 @@ export const MessageInput: React.FC<MessageInputProps> = ({
         </div>
       )}
 
-      {/* Suggestions Popup */}
-      {suggestions.length > 0 && (
-        <div className="absolute bottom-full left-3 right-3 mb-1 max-h-56 overflow-y-auto rounded-lg border border-[var(--border)] bg-[var(--bg-secondary)] shadow-xl z-30 py-1">
-          {suggestions.map((item, idx) => (
-            <button
-              key={`${item.kind}-${item.label}-${idx}`}
-              type="button"
-              onMouseDown={(e) => {
-                e.preventDefault();
-                applySuggestion(item);
-              }}
-              className={`w-full flex items-center justify-between gap-3 px-3 py-1.5 text-left text-xs transition-colors ${
-                idx === suggestIdx
-                  ? 'bg-[var(--accent)]/20 text-[var(--text-primary)]'
-                  : 'text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]'
+      {/* Suggestions Popup & Persistent Command Usage Line (#1369) */}
+      {(suggestions.length > 0 || (usage !== null && !formatOpen && !menuOpen)) && (
+        <div className="vertical-popover absolute bottom-full left-3 right-3 mb-1 rounded-lg border border-[var(--border)] bg-[var(--bg-secondary)] shadow-xl z-30 overflow-hidden">
+          {suggestions.length > 0 && (
+            <div className="max-h-56 overflow-y-auto py-1">
+              {suggestions.map((item, idx) => (
+                <button
+                  key={`${item.kind}-${item.label}-${idx}`}
+                  type="button"
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    applySuggestion(item);
+                  }}
+                  className={`w-full flex items-center justify-between gap-3 px-3 py-1.5 text-left text-xs transition-colors ${
+                    idx === suggestIdx
+                      ? 'bg-[var(--accent)]/20 text-[var(--text-primary)]'
+                      : 'text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]'
+                  }`}
+                >
+                  <span className="font-medium text-[var(--text-primary)] shrink-0">
+                    {item.label}
+                  </span>
+                  {item.detail && (
+                    <span className="truncate text-[var(--text-muted)]">{item.detail}</span>
+                  )}
+                </button>
+              ))}
+            </div>
+          )}
+          {usage && (
+            <div
+              data-testid="command-usage-line"
+              className={`usage-line px-3 py-1.5 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-0.5 text-xs text-[var(--text-muted)] select-none ${
+                suggestions.length > 0 ? 'border-t border-[var(--border)]' : ''
               }`}
             >
-              <span className="font-medium text-[var(--text-primary)] shrink-0">
-                {item.label}
+              <span className="usage font-mono">
+                {usage.parts.map((part, i) => (
+                  <React.Fragment key={i}>
+                    {i > 0 && ' '}
+                    <span
+                      className={
+                        part.active
+                          ? 'active text-[var(--text-primary)] font-semibold'
+                          : undefined
+                      }
+                    >
+                      {part.text}
+                    </span>
+                  </React.Fragment>
+                ))}
               </span>
-              {item.detail && (
-                <span className="truncate text-[var(--text-muted)]">{item.detail}</span>
-              )}
-            </button>
-          ))}
+              <span className="summary truncate text-[11px]">{usage.description}</span>
+            </div>
+          )}
         </div>
       )}
 
@@ -1419,6 +1484,7 @@ export const MessageInput: React.FC<MessageInputProps> = ({
           ref={fileInputRef}
           type="file"
           multiple
+          accept={ACCEPTED_FILE_TYPES}
           className="hidden"
           onChange={(e) => {
             if (e.target.files?.length) {
@@ -1479,6 +1545,9 @@ export const MessageInput: React.FC<MessageInputProps> = ({
               textRef.current = e.target.value;
               handleChange(e);
             }}
+            onKeyUp={(e) => setCaretPos(e.currentTarget.selectionStart ?? e.currentTarget.value.length)}
+            onClick={(e) => setCaretPos(e.currentTarget.selectionStart ?? e.currentTarget.value.length)}
+            onSelect={(e) => setCaretPos(e.currentTarget.selectionStart ?? e.currentTarget.value.length)}
             onKeyDown={(e) => {
               const wantsSubmit =
                 !e.nativeEvent.isComposing &&

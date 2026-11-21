@@ -29,6 +29,7 @@ import {
 import { useAuthStore } from '../stores/auth';
 import { useMediaViewerStore } from '../hooks/useMediaViewer';
 import { resolveServerUrl } from '../api';
+import { ACCEPTED_FILE_TYPES } from '../utils/uploaders';
 
 interface UploadsModalProps {
   open: boolean;
@@ -163,6 +164,7 @@ export const UploadsModal: React.FC<UploadsModalProps> = ({ open, onClose }) => 
           <input
             ref={fileInputRef}
             type="file"
+            accept={ACCEPTED_FILE_TYPES}
             hidden
             onChange={(e) => {
               void handleFiles(e.target.files);

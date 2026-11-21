@@ -367,6 +367,8 @@ export const WhoisModal: React.FC = () => {
     networkId != null ? s.byNetwork[networkId] || EMPTY_IGNORES : EMPTY_IGNORES,
   );
   const dccEnabled = useConfigStore((s) => s.features.dcc);
+  const configChecked = useConfigStore((s) => s.checked);
+  const linkPreviewsEnabled = useConfigStore((s) => s.features.linkPreviews);
 
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [avatarFailed, setAvatarFailed] = useState(false);
@@ -780,6 +782,14 @@ export const WhoisModal: React.FC = () => {
                     {presence.label}
                   </StatusBadge>
                 </div>
+                {isSelf && configChecked && !linkPreviewsEnabled && (
+                  <p
+                    data-testid="whois-avatars-need-previews"
+                    className="text-[11px] text-[var(--fg-muted)]"
+                  >
+                    To display avatars, you need <code>lurker-previews</code>.
+                  </p>
+                )}
               </div>
 
               {userAtHost && (

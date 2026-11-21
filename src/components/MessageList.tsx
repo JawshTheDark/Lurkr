@@ -496,7 +496,18 @@ export const MessageList: React.FC<MessageListProps> = ({ buffer, onOpenReaction
                   </div>
                 </div>
 
-                {!isSystemEvent && !redaction && m.id != null && (
+                {!isSystemEvent && !redaction && m.id != null && (() => {
+                  const isVirtualTarget = buffer.target.startsWith(':');
+                  const keptNotice = Boolean((m as any).sentTo && (m as any).self && m.type === 'notice');
+                  const canReplyRow = sup.reply && buffer.networkId != null && !isVirtualTarget;
+                  const canReactRow = sup.react && !isVirtualTarget;
+                  const canDeleteRow =
+                    sup.redact &&
+                    (m as any).self &&
+                    buffer.networkId != null &&
+                    (m.type === 'message' || m.type === 'action' || m.type === 'notice') &&
+                    (!isVirtualTarget || keptNotice);
+                  return (
                   <div
                     className="msg-hover-actions"
                     style={{
@@ -513,7 +524,7 @@ export const MessageList: React.FC<MessageListProps> = ({ buffer, onOpenReaction
                       padding: '2px',
                     }}
                   >
-                    {sup.reply && buffer.networkId != null && (
+                    {canReplyRow && (
                       <button
                         type="button"
                         title="Reply"
@@ -531,7 +542,7 @@ export const MessageList: React.FC<MessageListProps> = ({ buffer, onOpenReaction
                         <Reply size={13} />
                       </button>
                     )}
-                    {sup.react && (
+                    {canReactRow && (
                       <button
                         type="button"
                         title="Add reaction"
@@ -541,7 +552,7 @@ export const MessageList: React.FC<MessageListProps> = ({ buffer, onOpenReaction
                         <SmilePlus size={13} />
                       </button>
                     )}
-                    {threadsEnabled && buffer.id != null && (m as any).msgid && (
+                    {threadsEnabled && !isVirtualTarget && buffer.id != null && (m as any).msgid && (
                       <button
                         type="button"
                         title="Open thread"
@@ -571,7 +582,7 @@ export const MessageList: React.FC<MessageListProps> = ({ buffer, onOpenReaction
                     >
                       <Copy size={13} />
                     </button>
-                    {sup.redact && (m as any).self && buffer.networkId != null && (
+                    {canDeleteRow && (
                       <button
                         type="button"
                         title="Delete message"
@@ -581,7 +592,7 @@ export const MessageList: React.FC<MessageListProps> = ({ buffer, onOpenReaction
                           socketSend({
                             type: 'redact',
                             networkId: buffer.networkId,
-                            target: buffer.target,
+                            target: (m as any).sentTo?.target || buffer.target,
                             messageId: Number(m.id),
                           })
                         }
@@ -590,7 +601,8 @@ export const MessageList: React.FC<MessageListProps> = ({ buffer, onOpenReaction
                       </button>
                     )}
                   </div>
-                )}
+                  );
+                })()}
               </div>
 
               {showUnread && (

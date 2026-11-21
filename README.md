@@ -60,9 +60,10 @@
 ## ✨ Features
 
 ### 💬 Modern IRC Bouncer Experience
-- **Multi-Network Sidebar & Quick Switcher**: Manage multiple IRC networks (`*status`, channel buffers, queries, unread & highlight badges) with `Ctrl/Cmd + K` quick buffer switching and `Alt + Up/Down` stepping.
-- **Rich Message Rendering**: Nick-aligned wrapped messages, inline media & link previews, click-to-zoom `MediaViewerModal` lightbox, spoiler tags, mIRC color formatting, thread drawer (`ThreadPanel`), emoji reactions, replies, bookmarks, message redaction, and message search (`Ctrl/Cmd + F`).
-- **Uploads, Clipboard Paste & Video Transcoding**: Paste screenshots directly (`Ctrl/Cmd + V`) or drag-and-drop files; optional desktop FFmpeg (`electron/transcode.ts`) automatically converts odd-dimension VFR `.webm` recordings into H.264/yuv420p `.mp4` or AAC `.m4a` before upload.
+- **Multi-Network Sidebar & Quick Switcher**: Manage multiple IRC networks (`*status`, channel buffers, queries, unread & highlight badges, live `+typing` indicator dots) with `Ctrl/Cmd + K` quick buffer switching and `Alt + Up/Down` stepping.
+- **Rich Message Rendering & Notice Routing**: Nick-aligned wrapped messages, inline media & link previews, click-to-zoom `MediaViewerModal` lightbox, spoiler tags, configurable `chat.notice_buffer` notice placement (`auto` / `private` / `server`) with `:server:` sent-notice redaction, thread drawer (`ThreadPanel`), emoji reactions, replies, bookmarks, message redaction, and message search (`Ctrl/Cmd + F`).
+- **Composer, Typing Indicators & mIRC Formatting**: Evenly aligned composer toolbar with mIRC color/style shortcuts (`Ctrl/Cmd + Shift + K` picker, `Ctrl/Cmd + B/I/U`, `Ctrl/Cmd + Shift + S/R/O`), live formatted preview bar, real-time `+typing` (`active`/`paused`/`done`) notifications, and persistent slash-command usage hints highlighting the active argument while typing.
+- **Expanded Media Uploads & Video Transcoding**: Native uploads and media playback for images, text/JSON, MP4/MOV/M4V/3GP, **WebM**, **Matroska (`.mkv`/`.mka`)**, **Ogg/Opus/Vorbis (`.ogg`/`.oga`/`.ogv`/`.opus`/`.spx`)**, **FLAC**, **WAV**, and **MP3** (`Ctrl/Cmd + V` paste or drag-and-drop), with automatic desktop FFmpeg fallback for older servers.
 - **Channel E2EE, Relay Unwrapping & DCC**: Built-in support for encrypted channel toggles, Relay / Janus bot formatting extraction, DCC chat/file transfers (`/dcc`, `/xdcc`), and interactive Desktop Sheep (`src/lib/sheep/`).
 
 ### 🔒 Security, Privacy & Auto-Updates
