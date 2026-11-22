@@ -172,6 +172,23 @@ export const MessageList: React.FC<MessageListProps> = ({ buffer, onOpenReaction
     }
   };
 
+  // Stay pinned when the list's own viewport changes size. The composer below
+  // grows for the typing indicator, the reply banner or a wrapped draft; that
+  // shrinks this list from the bottom without moving scrollTop or firing a
+  // scroll event, so the newest lines slid under the composer instead of being
+  // pushed up above it.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(() => {
+      if (atBottomRef.current && !buffer.detached) {
+        el.scrollTop = el.scrollHeight;
+      }
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [buffer.detached]);
+
   const handleDrop = async (e: React.DragEvent) => {
     e.preventDefault();
     setDragOver(false);
