@@ -56,10 +56,6 @@ export function notifyForEvent(event: any): void {
   if (networkId == null || !target) return;
 
   const isDm = !isChannelTarget(target);
-  const isHighlight = !!event.matched;
-  const notifyLevel = useChannelNotifyStore.getState().levelFor(networkId, target);
-  if (notifyLevel === 'mute') return;
-
   const ignoreVerdict = useIgnoresStore.getState().evaluate(Number(networkId), {
     nick: event.nick || '',
     userhost: event.userhost || null,
@@ -69,6 +65,10 @@ export function notifyForEvent(event: any): void {
     isDm,
   });
   if (ignoreVerdict.nonotify || ignoreVerdict.hide) return;
+
+  const isHighlight = !!event.matched && !ignoreVerdict.nohilight;
+  const notifyLevel = useChannelNotifyStore.getState().levelFor(networkId, target);
+  if (notifyLevel === 'mute') return;
 
   const activeKey = useNetworksStore.getState().activeKey;
   const isViewingBuffer =

@@ -16,6 +16,7 @@ import { useConfigStore } from '../../stores/config';
 import { isChannelTarget } from '../../shared/channels';
 import { resolveAliases } from '../../shared/aliases';
 import { jitsiRoomUrl } from '../../shared/jitsi';
+import { parseIgnoreArgs } from '../../shared/parseIgnore';
 import { parseDccCommand } from './dcc';
 import { parseXdccCommand } from './xdcc';
 import { parseRelayCommand } from './relay';
@@ -69,7 +70,12 @@ const CORE_SLASH_COMMANDS: SlashCommandDef[] = [
   { name: 'theme', args: '<name|id>', description: 'Switch active theme', category: 'general' },
   { name: 'dcc', args: '<chat|send|close> ...', description: 'DCC chat or file transfer', category: 'general' },
   { name: 'xdcc', args: '<bot> <packs>', description: 'Queue XDCC pack request', category: 'general' },
-  { name: 'ignore', args: '<mask>', description: 'Add an ignore rule', category: 'general' },
+  {
+    name: 'ignore',
+    args: '[-regexp|-full] [-except] [-network] [-time <dur>] <mask|#chan> [LEVELS...]',
+    description: 'List or add ignore rules (supports ALL, PUBLIC, MSGS, NOHIGHLIGHT, NOUNREAD, NONOTIFY)',
+    category: 'general',
+  },
   { name: 'unignore', args: '<id>', description: 'Remove an ignore rule', category: 'general' },
   { name: 'relay', args: '[list|add <nick> [pattern]|remove <nick>]', description: 'Manage relay/Janus bridge bots on this network', category: 'network' },
   { name: 'alias', args: '[name [commands...]|-name]', description: 'List, define, or remove command aliases', category: 'general' },
@@ -464,9 +470,54 @@ export async function dispatchSlashCommand(
       return true;
     }
     case 'ignore': {
-      if (!parts[0]) return true;
-      useIgnoresStore.getState().add({ networkId, mask: parts[0], levels: ['ALL'] });
-      pushLocalInfo(networkId, target, `Added ignore rule for ${parts[0]}`);
+      const store = useIgnoresStore.getState();
+      if (!rest) {
+        const list = store.all();
+        if (list.length === 0) {
+          pushLocalInfo(networkId, target, 'No ignore rules set.');
+        } else {
+          for (const r of list) {
+            const scope = r.networkId == null ? 'global' : `net#${r.networkId}`;
+            const subj = r.mask || (r.pattern ? `pattern "${r.pattern}"` : '*');
+            const extra = [
+              r.levels.join(','),
+              r.channels?.length ? r.channels.join(',') : '',
+              r.isExcept ? 'except' : '',
+            ]
+              .filter(Boolean)
+              .join(' ');
+            pushLocalInfo(networkId, target, `#${r.id} [${scope}] ${subj} (${extra})`);
+          }
+        }
+        return true;
+      }
+      const parsed = parseIgnoreArgs(rest);
+      if (parsed.error) {
+        pushLocalInfo(networkId, target, `/ignore: ${parsed.error}`);
+        return true;
+      }
+      if (parsed.scopeNetwork && networkId == null) {
+        pushLocalInfo(networkId, target, '/ignore: -network requires an active network.');
+        return true;
+      }
+      const scopeNetId = parsed.scopeNetwork ? networkId : null;
+      store.add({
+        networkId: scopeNetId,
+        mask: parsed.mask,
+        channels: parsed.channels,
+        pattern: parsed.pattern,
+        patternKind: parsed.patternKind,
+        levels: parsed.levels,
+        isExcept: parsed.isExcept,
+        expiresAt: parsed.expiresAt,
+      });
+      const subj = parsed.mask || (parsed.pattern ? `"${parsed.pattern}"` : '*');
+      const scopeLabel = scopeNetId == null ? 'global' : 'network';
+      pushLocalInfo(
+        networkId,
+        target,
+        `Added ${scopeLabel} ignore rule for ${subj} (${parsed.levels.join(', ')})`,
+      );
       return true;
     }
     case 'unignore': {

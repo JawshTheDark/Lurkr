@@ -5,11 +5,13 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { EncryptedPreviewCachePanel } from '../components/EncryptedPreviewCachePanel';
 import { DesktopUpdaterPanel } from '../components/DesktopUpdaterPanel';
+import { IgnoreRulesPanel } from '../components/IgnoreRulesPanel';
 import {
   ArrowLeft,
   Palette,
   Bell,
   Shield,
+  ShieldOff,
   Download,
   Server,
   KeyRound,
@@ -318,6 +320,7 @@ export const SettingsView: React.FC = () => {
           {[
             { id: '_themes', label: 'Themes', icon: Palette },
             { id: '_highlights', label: 'Highlight Rules', icon: Bell },
+            { id: '_ignores', label: 'Ignore Rules', icon: ShieldOff },
             { id: '_aliases', label: 'Command Aliases', icon: Terminal },
             { id: '_relays', label: 'Relay / Janus Bots', icon: Radio },
             { id: '_security', label: 'Security & Passkeys', icon: Shield },
@@ -346,6 +349,13 @@ export const SettingsView: React.FC = () => {
 
         <main className="flex-1 min-h-0 p-5 overflow-y-auto scroll-region space-y-5">
           {section === '_themes' && <ThemeStudio />}
+
+          {section === '_ignores' && (
+            <div className="space-y-4">
+              <h2 className="text-lg font-semibold">Ignore Rules</h2>
+              <IgnoreRulesPanel listClassName="space-y-1.5" />
+            </div>
+          )}
 
           {section === '_highlights' && (
             <div className="space-y-4">

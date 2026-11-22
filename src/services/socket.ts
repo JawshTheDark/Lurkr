@@ -327,10 +327,23 @@ function handleIrcEvent(event: any): void {
         if (event.target && event.nick && event.networkId != null) {
           buffers.recordSpeaker(event.networkId, event.target, event.nick, Date.now());
         }
-        if (event.matched || (!isChannelTarget(event.target) && !event.self)) {
+        const isDmMsg = !isChannelTarget(event.target);
+        const ignoreVerdict =
+          event.networkId != null
+            ? useIgnoresStore.getState().evaluate(Number(event.networkId), {
+                nick: event.nick || '',
+                userhost: event.userhost || null,
+                target: event.target || '',
+                text: event.text || '',
+                type: event.type || 'message',
+                isDm: isDmMsg,
+              })
+            : { hide: false, nohilight: false, nonotify: false };
+        const effectiveMatch = !!event.matched && !ignoreVerdict.nohilight;
+        if (!ignoreVerdict.hide && (effectiveMatch || (isDmMsg && !event.self))) {
           useHighlightsStore.getState().prepend({
             id: event.id,
-            kind: event.matched ? 'highlight' : 'dm',
+            kind: effectiveMatch ? 'highlight' : 'dm',
             networkId: event.networkId,
             target: event.target,
             nick: event.nick,

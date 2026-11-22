@@ -54,6 +54,8 @@ export const MessageList: React.FC<MessageListProps> = ({ buffer, onOpenReaction
   const redactionsByMsg = useRedactionsStore((s) => s.byMessage);
   const bookmarkedIds = useBookmarksStore((s) => s.bookmarkedIds);
   const relayBotsByKey = useRelayBotsStore((s) => s.byKey);
+  const globalIgnores = useIgnoresStore((s) => s.global);
+  const byNetworkIgnores = useIgnoresStore((s) => s.byNetwork);
   const netState = useNetworksStore((s) =>
     buffer.networkId != null ? s.states[buffer.networkId] : null,
   );
@@ -81,9 +83,12 @@ export const MessageList: React.FC<MessageListProps> = ({ buffer, onOpenReaction
 
   const sup = tagSupport(netState);
 
-  const visibleMessages = useMemo(() => {
+  const { visibleMessages, nohilightIds } = useMemo(() => {
+    void globalIgnores;
+    void byNetworkIgnores;
     const ignores = useIgnoresStore.getState();
     const list: BufferMessage[] = [];
+    const nohi = new Set<BufferMessage>();
     for (const m of buffer.messages) {
       if (!buffer.detached && buffer.clearedBeforeId > 0 && m.id != null && m.id <= buffer.clearedBeforeId) {
         continue;
@@ -102,11 +107,22 @@ export const MessageList: React.FC<MessageListProps> = ({ buffer, onOpenReaction
           isDm: !isChannelTarget(buffer.target),
         });
         if (verdict.hide) continue;
+        if (verdict.nohilight) nohi.add(m);
       }
       list.push(m);
     }
-    return list;
-  }, [buffer.messages, buffer.detached, buffer.clearedBeforeId, buffer.networkId, buffer.target, eventMode, threadsEnabled]);
+    return { visibleMessages: list, nohilightIds: nohi };
+  }, [
+    buffer.messages,
+    buffer.detached,
+    buffer.clearedBeforeId,
+    buffer.networkId,
+    buffer.target,
+    eventMode,
+    threadsEnabled,
+    globalIgnores,
+    byNetworkIgnores,
+  ]);
 
   useEffect(() => {
     const el = scrollRef.current;
@@ -278,7 +294,7 @@ export const MessageList: React.FC<MessageListProps> = ({ buffer, onOpenReaction
           }
 
           const threadStats = (m as any).thread;
-          const isHighlight = !!(m as any).matched;
+          const isHighlight = !!(m as any).matched && !nohilightIds.has(m);
           const isAlt = idx % 2 === 1;
 
           return (

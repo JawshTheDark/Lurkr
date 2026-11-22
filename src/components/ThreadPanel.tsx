@@ -5,6 +5,8 @@ import React from 'react';
 import { X, MessageSquare, ArrowLeft, Bell, BellOff, Loader2 } from 'lucide-react';
 import { useThreadsStore } from '../stores/threads';
 import { useBuffersStore } from '../stores/buffers';
+import { useIgnoresStore } from '../stores/ignores';
+import { isChannelTarget } from '../shared/channels';
 import { socketSend } from '../services/socketBus';
 import { LinkedText } from './LinkedText';
 import { MessageAttachments } from './MessageAttachments';
@@ -21,6 +23,10 @@ export const ThreadPanel: React.FC<ThreadPanelProps> = ({ onOpenUploadsModal }) 
   const list = useThreadsStore((s) => s.list);
   const wantComposer = useThreadsStore((s) => s.wantComposer);
   const followedFor = useThreadsStore((s) => s.followedFor);
+  const globalIgnores = useIgnoresStore((s) => s.global);
+  const byNetworkIgnores = useIgnoresStore((s) => s.byNetwork);
+  void globalIgnores;
+  void byNetworkIgnores;
 
   if (!view && !list) return null;
 
@@ -177,27 +183,54 @@ export const ThreadPanel: React.FC<ThreadPanelProps> = ({ onOpenUploadsModal }) 
         )}
 
         <div className="space-y-2.5">
-          {view.replies.map((msg) => (
-            <div key={msg.id} className="text-sm">
-              <div className="flex items-baseline gap-2">
-                <span
-                  className="font-semibold text-xs"
-                  style={{ color: resolveThemedNickColor(msg.nick || '') || undefined }}
-                >
-                  {msg.nick}
-                </span>
-                {msg.time && (
-                  <span className="text-[10px] text-[var(--text-muted)]">
-                    {formatTime(msg.time)}
+          {view.replies
+            .filter((msg: any) => {
+              if (msg.fromIgnored) return false;
+              const verdict = useIgnoresStore.getState().evaluate(view.networkId, {
+                nick: msg.nick || '',
+                userhost: msg.userhost || null,
+                target: view.target,
+                text: String(msg.text || ''),
+                type: msg.type || 'message',
+                isDm: !isChannelTarget(view.target),
+              });
+              return !verdict.hide;
+            })
+            .map((msg) => {
+              const verdict = useIgnoresStore.getState().evaluate(view.networkId, {
+                nick: msg.nick || '',
+                userhost: (msg as any).userhost || null,
+                target: view.target,
+                text: String(msg.text || ''),
+                type: msg.type || 'message',
+                isDm: !isChannelTarget(view.target),
+              });
+              const isHighlight = !!(msg as any).matched && !verdict.nohilight;
+              return (
+              <div
+                key={msg.id}
+                className={`text-sm rounded px-1.5 py-0.5 ${isHighlight ? 'border-l-2 border-[var(--buffer-highlight)]' : ''}`}
+              >
+                <div className="flex items-baseline gap-2">
+                  <span
+                    className="font-semibold text-xs"
+                    style={{ color: resolveThemedNickColor(msg.nick || '') || undefined }}
+                  >
+                    {msg.nick}
                   </span>
-                )}
+                  {msg.time && (
+                    <span className="text-[10px] text-[var(--text-muted)]">
+                      {formatTime(msg.time)}
+                    </span>
+                  )}
+                </div>
+                <div className="text-[var(--text-primary)] break-words pl-0.5">
+                  <LinkedText text={msg.text || ''} networkId={view.networkId} />
+                </div>
+                <MessageAttachments text={msg.text || ''} />
               </div>
-              <div className="text-[var(--text-primary)] break-words pl-0.5">
-                <LinkedText text={msg.text || ''} />
-              </div>
-              <MessageAttachments text={msg.text || ''} />
-            </div>
-          ))}
+              );
+            })}
         </div>
       </div>
 
