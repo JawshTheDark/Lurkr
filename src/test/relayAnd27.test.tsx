@@ -322,4 +322,84 @@ describe('Relay / Janus bots & Lurker 2.7 parity', () => {
     expect(nickEl.style.flexGrow).toBe('0');
     expect(nickEl.style.flexShrink).toBe('1');
   });
+
+  it('keeps MemberList filter box bounded with zero input padding, filters live, and clears via button or Escape', async () => {
+    useNetworksStore.setState({
+      networks: [{ id: 1, name: 'LurkerNet', host: 'irc.example', port: 6697, nick: 'Jawsh', tls: true }],
+      states: {
+        1: { networkId: 1, channels: ['#lurker', '#other'], state: 'connected', nick: 'Jawsh' },
+      },
+      activeKey: '1::#lurker',
+    });
+    useBuffersStore.getState().ensure(1, '#lurker');
+    useBuffersStore.getState().ensure(1, '#other');
+    useBuffersStore.getState().setMembers(1, '#lurker', [
+      { nick: 'amiantos', modes: ['q'], away: false },
+      { nick: 'Jawsh', modes: [], away: false },
+      { nick: 'LurkerBot', modes: ['v'], away: false },
+    ]);
+    useBuffersStore.getState().setMembers(1, '#other', [
+      { nick: 'alice', modes: [], away: false },
+    ]);
+
+    root = createRoot(container);
+    await act(async () => {
+      root!.render(React.createElement(MemberList, { networkId: 1, target: '#lurker' }));
+    });
+
+    const aside = container.querySelector('aside.member-list') as HTMLElement;
+    expect(aside.style.width).toBe('100%');
+
+    const filterBox = container.querySelector('[data-testid="member-filter-box"]') as HTMLElement;
+    expect(filterBox.style.width).toBe('100%');
+    expect(filterBox.style.minWidth).toMatch(/^0(px)?$/);
+
+    const input = container.querySelector('input[aria-label="Filter members"]') as HTMLInputElement;
+    expect(input.getAttribute('size')).toBe('1');
+    expect(input.style.minWidth).toMatch(/^0(px)?$/);
+    expect(input.style.padding).toMatch(/^0(px)?$/);
+    expect(aside.textContent).toContain('3 members');
+
+    const setValue = (val: string) => {
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+      setter?.call(input, val);
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    };
+
+    await act(async () => {
+      setValue('ami');
+    });
+    expect(aside.textContent).toContain('1 of 3 members');
+    expect(aside.textContent).toContain('amiantos');
+    expect(aside.textContent).not.toContain('Jawsh');
+
+    const clearBtn = container.querySelector('button[aria-label="Clear member filter"]') as HTMLButtonElement;
+    expect(clearBtn).not.toBeNull();
+    await act(async () => {
+      clearBtn.click();
+    });
+    expect(input.value).toBe('');
+    expect(aside.textContent).toContain('3 members');
+
+    await act(async () => {
+      setValue('zzz');
+    });
+    expect(aside.textContent).toContain('0 of 3 members');
+    expect(aside.textContent).toContain('No matching members');
+
+    await act(async () => {
+      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    });
+    expect(input.value).toBe('');
+
+    await act(async () => {
+      setValue('jaw');
+    });
+    expect(input.value).toBe('jaw');
+    await act(async () => {
+      root!.render(React.createElement(MemberList, { networkId: 1, target: '#other' }));
+    });
+    expect(input.value).toBe('');
+    expect(aside.textContent).toContain('1 member');
+  });
 });

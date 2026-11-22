@@ -515,9 +515,9 @@ export const ChatView: React.FC = () => {
 
         {/* Desktop Member List */}
         {showMembersDesktop && activeBuffer && (
-          <aside className="w-56 shrink-0 border-l border-[var(--border)] bg-[var(--bg-secondary)] flex flex-col min-h-0">
+          <div className="w-[210px] shrink-0 bg-[var(--bg-secondary)] flex flex-col min-h-0">
             <MemberList networkId={activeBuffer.networkId} target={activeBuffer.target} />
-          </aside>
+          </div>
         )}
 
         {/* Mobile Member List Drawer */}
@@ -527,9 +527,9 @@ export const ChatView: React.FC = () => {
               className="fixed inset-0 bg-black/50"
               onClick={() => setMobileMembersOpen(false)}
             />
-            <aside className="relative z-10 w-64 max-w-[80vw] bg-[var(--bg-secondary)] border-l border-[var(--border)] flex flex-col h-full">
+            <div className="relative z-10 w-64 max-w-[80vw] bg-[var(--bg-secondary)] flex flex-col h-full">
               <MemberList networkId={activeBuffer.networkId} target={activeBuffer.target} />
-            </aside>
+            </div>
           </div>
         )}
       </div>

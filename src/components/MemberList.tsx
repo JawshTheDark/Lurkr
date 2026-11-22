@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { Search } from 'lucide-react';
+import { Search, X } from 'lucide-react';
 import { useBuffersStore, type BufferMember } from '../stores/buffers';
 import { isNetworkOper, useNetworksStore } from '../stores/networks';
 import { executeOperRaw, useOperStore } from '../stores/oper';
@@ -57,6 +57,8 @@ export const MemberList: React.FC<MemberListProps> = ({ networkId, target }) => 
   const dccEnabled = useConfigStore((s) => s.features.dcc);
   const nickNotes = useNickNotesStore((s) => s.byNetwork[networkId] ?? EMPTY_NICK_NOTES);
   const relayBotsByKey = useRelayBotsStore((s) => s.byKey);
+  const ignoreGlobal = useIgnoresStore((s) => s.global);
+  const ignoreByNetwork = useIgnoresStore((s) => s.byNetwork);
   const [filter, setFilter] = useState('');
   const [ctx, setCtx] = useState<{ open: boolean; x: number; y: number; member: BufferMember | null }>({
     open: false,
@@ -65,8 +67,12 @@ export const MemberList: React.FC<MemberListProps> = ({ networkId, target }) => 
     member: null,
   });
 
-  const sortedMembers = useMemo(() => {
-    if (!buf?.members) return [];
+  useEffect(() => {
+    setFilter('');
+  }, [networkId, target]);
+
+  const { visibleCount, sortedMembers } = useMemo(() => {
+    if (!buf?.members) return { visibleCount: 0, sortedMembers: [] };
     const ignores = useIgnoresStore.getState();
     const q = filter.trim().toLowerCase();
     const rankOf = (m: BufferMember) => {
@@ -75,13 +81,14 @@ export const MemberList: React.FC<MemberListProps> = ({ networkId, target }) => 
       }
       return prefixModes.length;
     };
-    return buf.members
-      .filter((m) => {
-        if (ignores.isMemberIgnored(networkId, target, { nick: m.nick, userhost: m.user && m.host ? `${m.user}@${m.host}` : null })) {
-          return false;
-        }
-        return !q || m.nick.toLowerCase().includes(q);
-      })
+    const visible = buf.members.filter(
+      (m) =>
+        !ignores.isMemberIgnored(networkId, target, {
+          nick: m.nick,
+          userhost: m.user && m.host ? `${m.user}@${m.host}` : null,
+        }),
+    );
+    const filtered = (q ? visible.filter((m) => m.nick.toLowerCase().includes(q)) : visible)
       .slice()
       .sort((a, b) => {
         const ra = rankOf(a);
@@ -89,7 +96,8 @@ export const MemberList: React.FC<MemberListProps> = ({ networkId, target }) => 
         if (ra !== rb) return ra - rb;
         return a.nick.toLowerCase().localeCompare(b.nick.toLowerCase());
       });
-  }, [buf?.members, filter, networkId, target, prefixModes]);
+    return { visibleCount: visible.length, sortedMembers: filtered };
+  }, [buf?.members, filter, networkId, target, prefixModes, ignoreGlobal, ignoreByNetwork]);
 
   const contextItems = (): ContextMenuItem[] => {
     const m = ctx.member;
@@ -346,12 +354,16 @@ export const MemberList: React.FC<MemberListProps> = ({ networkId, target }) => 
 
   if (!buf) return null;
 
+  const hasFilterQuery = filter.trim().length > 0;
+
   return (
     <aside
       className="member-list"
       style={{
-        width: '210px',
-        flexShrink: 0,
+        width: '100%',
+        flex: 1,
+        minHeight: 0,
+        height: '100%',
         borderLeft: '1px solid var(--border)',
         background: 'var(--bg-soft)',
         display: 'flex',
@@ -366,43 +378,99 @@ export const MemberList: React.FC<MemberListProps> = ({ networkId, target }) => 
           display: 'flex',
           flexDirection: 'column',
           gap: '6px',
+          width: '100%',
+          minWidth: 0,
         }}
       >
         <div style={{ fontSize: '0.8em', color: 'var(--fg-muted)', fontWeight: 600 }}>
           {buf.membersKnown === 'none'
             ? 'Loading members…'
-            : `${sortedMembers.length} ${sortedMembers.length === 1 ? 'member' : 'members'}`}
+            : hasFilterQuery
+              ? `${sortedMembers.length} of ${visibleCount} ${visibleCount === 1 ? 'member' : 'members'}`
+              : `${sortedMembers.length} ${sortedMembers.length === 1 ? 'member' : 'members'}`}
         </div>
         <div
+          className="member-filter-box"
+          data-testid="member-filter-box"
           style={{
             display: 'flex',
             alignItems: 'center',
-            gap: '5px',
-            background: 'var(--bg)',
-            border: '1px solid var(--border)',
-            borderRadius: '4px',
-            padding: '3px 6px',
+            gap: '6px',
+            width: '100%',
+            minWidth: 0,
+            padding: '4px 7px',
           }}
         >
-          <Search size={12} style={{ color: 'var(--fg-muted)' }} />
+          <Search
+            size={12}
+            style={{
+              width: '12px',
+              height: '12px',
+              color: 'var(--fg-muted)',
+              flexShrink: 0,
+              verticalAlign: 'middle',
+            }}
+          />
           <input
             type="text"
+            size={1}
+            aria-label="Filter members"
             value={filter}
             onChange={(e) => setFilter(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape' && filter) {
+                e.preventDefault();
+                setFilter('');
+              }
+            }}
             placeholder="Filter…"
             style={{
+              flex: '1 1 0%',
+              minWidth: 0,
               width: '100%',
               background: 'transparent',
               border: 'none',
+              padding: 0,
+              margin: 0,
               color: 'var(--fg)',
               fontSize: '0.82em',
+              lineHeight: 1.35,
               outline: 'none',
             }}
           />
+          {filter && (
+            <button
+              type="button"
+              aria-label="Clear member filter"
+              title="Clear filter"
+              onClick={() => setFilter('')}
+              style={{
+                background: 'transparent',
+                border: 'none',
+                padding: 0,
+                margin: 0,
+                width: '14px',
+                height: '14px',
+                color: 'var(--fg-muted)',
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexShrink: 0,
+                cursor: 'pointer',
+              }}
+            >
+              <X size={12} style={{ width: '12px', height: '12px' }} />
+            </button>
+          )}
         </div>
       </div>
 
       <div style={{ flex: 1, overflowY: 'auto', padding: '4px 6px' }}>
+        {hasFilterQuery && sortedMembers.length === 0 ? (
+          <div style={{ padding: '10px 6px', fontSize: '0.8em', color: 'var(--fg-muted)' }}>
+            No matching members
+          </div>
+        ) : null}
         {sortedMembers.map((m) => {
           const prefix = prefixOf(m.modes || [], prefixModes);
           const note = nickNotes[m.nick.toLowerCase()];

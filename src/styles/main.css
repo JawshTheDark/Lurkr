@@ -579,6 +579,14 @@ textarea:focus {
   outline: none;
   border-color: var(--accent);
 }
+.member-filter-box {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+.member-filter-box:focus-within {
+  border-color: var(--accent);
+}
 /* Dim placeholders well below real input text (and below --fg-muted) so users
    don't mistake the hint for content they typed. opacity:1 neutralises
    Firefox's default placeholder dimming so our colour is what shows. */
