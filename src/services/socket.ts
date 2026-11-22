@@ -686,6 +686,9 @@ function handleMessage(raw: string): void {
 
   if (payload.kind === 'snapshot') {
     applySnapshot(payload.networks || [], payload.globalIgnores || []);
+    if (typeof payload.cursor === 'number') {
+      trackSeenId(payload.cursor);
+    }
     if (Array.isArray(payload.favorites)) {
       useFavoritesStore.getState().apply(payload.favorites);
     }
@@ -719,17 +722,39 @@ function handleMessage(raw: string): void {
     const target = payload.target;
     if (!target) return;
     const events = payload.events || [];
-    for (const e of events) trackSeenId(e?.id);
+    if (nid != null && Array.isArray(events)) {
+      for (const e of events) trackSeenId(e?.id);
+    }
     if (nid != null) {
       useReactionsStore.getState().noteFromEvents(events, nid);
       useRedactionsStore.getState().noteFromEvents(events, nid);
       useBookmarksStore.getState().noteFromEvents(events, nid);
     }
-    buffers.replaceBacklog(nid, target, events, payload.speakers, payload.readState, payload.joined, {
+    const readState =
+      payload.readState ||
+      ('unread' in payload ||
+      'lastReadId' in payload ||
+      'highlights' in payload ||
+      'highlighted' in payload
+        ? {
+            lastReadId: payload.lastReadId,
+            unread: payload.unread,
+            highlighted: payload.highlighted ?? payload.highlights,
+            highlightsCapped: payload.highlightsCapped,
+            bufferId: payload.bufferId,
+          }
+        : null);
+    buffers.replaceBacklog(nid, target, events, payload.speakers, readState, payload.joined, {
       reset: !!payload.reset,
       hasMoreOlder: payload.hasMoreOlder,
       bufferId: payload.bufferId,
     });
+    if ('clearedBeforeId' in payload || 'clearedAt' in payload) {
+      buffers.applyClearedState(nid, target, {
+        clearedBeforeId: payload.clearedBeforeId,
+        clearedAt: payload.clearedAt,
+      });
+    }
     maybeInspectServerBuffer(nid, target, events, payload);
     primeEventPreviews(events, nid, target);
     return;
@@ -861,22 +886,44 @@ function handleMessage(raw: string): void {
   }
 
   if (payload.kind === 'favorites-changed') {
-    useFavoritesStore.getState().apply(payload.entries || []);
+    const list = Array.isArray(payload.favorites)
+      ? payload.favorites
+      : Array.isArray(payload.entries)
+        ? payload.entries
+        : [];
+    useFavoritesStore.getState().apply(list);
     return;
   }
 
   if (payload.kind === 'nicklist-collapsed-changed') {
-    useNicklistCollapseStore.getState().setNetwork(payload.networkId, payload.collapsed || []);
+    if (typeof payload.collapsed === 'boolean' && payload.target) {
+      useNicklistCollapseStore
+        .getState()
+        .applyChange(payload.networkId, payload.target, payload.collapsed);
+    } else if (Array.isArray(payload.collapsed)) {
+      useNicklistCollapseStore.getState().setNetwork(payload.networkId, payload.collapsed);
+    }
     return;
   }
 
   if (payload.kind === 'channel-notify-changed') {
-    useChannelNotifyStore.getState().setNetwork(payload.networkId, payload.levels || {});
+    if (payload.target && typeof payload.notifyAlways === 'boolean') {
+      useChannelNotifyStore
+        .getState()
+        .applyChange(payload.networkId, payload.target, payload.notifyAlways);
+    } else if (payload.levels && typeof payload.levels === 'object') {
+      useChannelNotifyStore.getState().setNetwork(payload.networkId, payload.levels);
+    }
     return;
   }
 
   if (payload.kind === 'ignore-list-updated') {
-    useIgnoresStore.getState().applyUpdate(payload.networkId ?? null, payload.rules || []);
+    const list = Array.isArray(payload.masks)
+      ? payload.masks
+      : Array.isArray(payload.rules)
+        ? payload.rules
+        : [];
+    useIgnoresStore.getState().applyUpdate(payload.networkId ?? null, list);
     return;
   }
 

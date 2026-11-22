@@ -22,7 +22,22 @@ export const useNickNotesStore = create<NickNotesState>((set, get) => ({
   applySnapshot: (networks) => {
     const next: Record<number, Record<string, string>> = {};
     for (const n of networks || []) {
-      if (n?.networkId != null && n.nickNotes) next[n.networkId] = { ...n.nickNotes };
+      if (n?.networkId == null || !n.nickNotes) continue;
+      if (Array.isArray(n.nickNotes)) {
+        const map: Record<string, string> = {};
+        for (const entry of n.nickNotes) {
+          if (entry?.nick && entry.note) {
+            map[String(entry.nick).toLowerCase()] = String(entry.note);
+          }
+        }
+        next[n.networkId] = map;
+      } else if (typeof n.nickNotes === 'object') {
+        const map: Record<string, string> = {};
+        for (const [k, v] of Object.entries(n.nickNotes)) {
+          if (typeof v === 'string' && v) map[k.toLowerCase()] = v;
+        }
+        next[n.networkId] = map;
+      }
     }
     set({ byNetwork: next });
   },

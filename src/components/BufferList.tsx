@@ -304,7 +304,9 @@ export const BufferList: React.FC<BufferListProps> = ({
     const k = bufferKey(buf.networkId, buf.target);
     const isActive = activeKey === k;
     const hasDraft = !!(drafts[k] || replies[k]);
-    const isPinned = buf.networkId != null && (pinsByNet[buf.networkId] || []).includes(buf.target);
+    const isPinned =
+      buf.networkId != null &&
+      (pinsByNet[buf.networkId] || []).some((p) => p.toLowerCase() === buf.target.toLowerCase());
     const muted =
       buf.networkId != null &&
       buf.kind === 'channel' &&
@@ -581,15 +583,17 @@ export const BufferList: React.FC<BufferListProps> = ({
                 !favKeys.has(`${net.id}::${b.target.toLowerCase()}`),
             )
             .sort((a, b) => {
-              const pa = pinned.indexOf(a.target);
-              const pb = pinned.indexOf(b.target);
+              const aLower = a.target.toLowerCase();
+              const bLower = b.target.toLowerCase();
+              const pa = pinned.findIndex((p) => p.toLowerCase() === aLower);
+              const pb = pinned.findIndex((p) => p.toLowerCase() === bLower);
               if (pa !== -1 || pb !== -1) {
                 if (pa === -1) return 1;
                 if (pb === -1) return -1;
                 return pa - pb;
               }
               if (a.kind !== b.kind) return a.kind === 'channel' ? -1 : 1;
-              return a.target.toLowerCase().localeCompare(b.target.toLowerCase());
+              return aLower.localeCompare(bLower);
             });
 
           return (

@@ -141,8 +141,13 @@ export const useIgnoresStore = create<IgnoresState>((set, get) => ({
     mergedCache.clear();
     const byNetwork: Record<number, IgnoreEntry[]> = {};
     for (const n of networks || []) {
-      if (n?.networkId != null && Array.isArray(n.ignores)) {
-        byNetwork[n.networkId] = n.ignores;
+      const list = Array.isArray(n?.ignoredMasks)
+        ? n.ignoredMasks
+        : Array.isArray(n?.ignores)
+          ? n.ignores
+          : null;
+      if (n?.networkId != null && list) {
+        byNetwork[n.networkId] = list;
       }
     }
     set({ global: Array.isArray(globalIgnores) ? globalIgnores : [], byNetwork });

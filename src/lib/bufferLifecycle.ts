@@ -47,6 +47,7 @@ const participants: Array<() => Partial<BufferLifecycleParticipant>> = [
   () => useNavHistoryStore.getState(),
   () => useDraftStore.getState(),
   () => usePinsStore.getState(),
+  () => useFavoritesStore.getState(),
   () => useNicklistCollapseStore.getState(),
   () => useChannelNotifyStore.getState(),
 ];

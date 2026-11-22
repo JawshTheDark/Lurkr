@@ -22,7 +22,10 @@ interface PinsState {
 export const usePinsStore = create<PinsState>((set, get) => ({
   byNetwork: {},
   forNetwork: (networkId) => get().byNetwork[networkId] || [],
-  isPinned: (networkId, target) => (get().byNetwork[networkId] || []).includes(target),
+  isPinned: (networkId, target) => {
+    const lower = target.toLowerCase();
+    return (get().byNetwork[networkId] || []).some((t) => t.toLowerCase() === lower);
+  },
   setNetwork: (networkId, pinned) =>
     set((s) => ({
       byNetwork: { ...s.byNetwork, [networkId]: Array.isArray(pinned) ? [...pinned] : [] },
@@ -45,20 +48,24 @@ export const usePinsStore = create<PinsState>((set, get) => ({
   },
   dropBuffer: (networkId, target) => {
     if (networkId == null) return;
+    const lower = target.toLowerCase();
     set((s) => {
       const list = s.byNetwork[networkId];
-      if (!list?.includes(target)) return s;
-      return { byNetwork: { ...s.byNetwork, [networkId]: list.filter((t) => t !== target) } };
+      if (!list?.some((t) => t.toLowerCase() === lower)) return s;
+      return { byNetwork: { ...s.byNetwork, [networkId]: list.filter((t) => t.toLowerCase() !== lower) } };
     });
   },
   rekeyBuffer: (networkId, from, to) => {
     if (networkId == null) return;
+    const fromL = from.toLowerCase();
+    const toL = to.toLowerCase();
     set((s) => {
       const list = s.byNetwork[networkId];
-      if (!list?.includes(from)) return s;
-      const updated = list.includes(to)
-        ? list.filter((t) => t !== from)
-        : list.map((t) => (t === from ? to : t));
+      if (!list?.some((t) => t.toLowerCase() === fromL)) return s;
+      const toExists = list.some((t) => t.toLowerCase() === toL);
+      const updated = toExists
+        ? list.filter((t) => t.toLowerCase() !== fromL)
+        : list.map((t) => (t.toLowerCase() === fromL ? to : t));
       return { byNetwork: { ...s.byNetwork, [networkId]: updated } };
     });
   },

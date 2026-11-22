@@ -25,7 +25,9 @@ interface FavoritesState {
   apply: (entries: FavoriteEntry[]) => void;
   favorite: (networkId: number | string, target: string) => void;
   unfavorite: (networkId: number | string, target: string) => void;
-  reorder: (entries: FavoriteEntry[]) => void;
+  reorder: (entriesOrIds: number[] | FavoriteEntry[]) => void;
+  dropBuffer: (networkId: number | string | null, target: string) => void;
+  rekeyBuffer: (networkId: number | string | null, from: string, to: string) => void;
   reset: () => void;
 }
 
@@ -34,23 +36,24 @@ export const useFavoritesStore = create<FavoritesState>((set, get) => ({
   isFavorite: (networkId, target) => {
     const folded = target.toLowerCase();
     return get().entries.some(
-      (e) => e.networkId === Number(networkId) && e.target.toLowerCase() === folded,
+      (e) => Number(e.networkId) === Number(networkId) && e.target.toLowerCase() === folded,
     );
   },
   favoriteKeys: () =>
-    new Set(get().entries.map((e) => `${e.networkId}::${e.target.toLowerCase()}`)),
+    new Set(get().entries.map((e) => `${Number(e.networkId)}::${e.target.toLowerCase()}`)),
   sections: () => {
     const buffers = Object.values(useBuffersStore.getState().buffers);
     const friends: FavoriteEntry[] = [];
     const channels: FavoriteEntry[] = [];
     for (const e of get().entries) {
       const folded = e.target.toLowerCase();
+      const nid = Number(e.networkId);
       const buf = buffers.find(
-        (b) => b.networkId === e.networkId && b.target.toLowerCase() === folded,
+        (b) => b.networkId === nid && b.target.toLowerCase() === folded,
       );
       if (!buf) continue;
       if (buf.kind === 'server' || buf.kind === 'system') continue;
-      const resolved = buf.target === e.target ? e : { ...e, target: buf.target };
+      const resolved = buf.target === e.target && e.networkId === nid ? e : { ...e, networkId: nid, target: buf.target };
       if (isChannelTarget(buf.target)) channels.push(resolved);
       else friends.push(resolved);
     }
@@ -77,8 +80,38 @@ export const useFavoritesStore = create<FavoritesState>((set, get) => ({
       bufferId: idFor(networkId, target),
     });
   },
-  reorder: (entries) => {
-    socketSend({ type: 'reorder-favorites', entries });
+  reorder: (entriesOrIds) => {
+    const bufferIds = (entriesOrIds || [])
+      .map((item) => (typeof item === 'number' ? item : item?.bufferId))
+      .filter((id): id is number => typeof id === 'number' && Number.isFinite(id));
+    socketSend({ type: 'reorder-favorites', bufferIds });
+  },
+  dropBuffer: (networkId, target) => {
+    if (networkId == null) return;
+    const nid = Number(networkId);
+    const folded = target.toLowerCase();
+    set((s) => ({
+      entries: s.entries.filter(
+        (e) => !(Number(e.networkId) === nid && e.target.toLowerCase() === folded),
+      ),
+    }));
+  },
+  rekeyBuffer: (networkId, from, to) => {
+    if (networkId == null) return;
+    const nid = Number(networkId);
+    const folded = from.toLowerCase();
+    const toExists = get().isFavorite(nid, to);
+    set((s) => ({
+      entries: toExists
+        ? s.entries.filter(
+            (e) => !(Number(e.networkId) === nid && e.target.toLowerCase() === folded),
+          )
+        : s.entries.map((e) =>
+            Number(e.networkId) === nid && e.target.toLowerCase() === folded
+              ? { ...e, networkId: nid, target: to }
+              : e,
+          ),
+    }));
   },
   reset: () => set({ entries: [] }),
 }));

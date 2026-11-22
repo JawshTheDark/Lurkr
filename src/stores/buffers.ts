@@ -720,7 +720,12 @@ export const useBuffersStore = create<BuffersStoreState>((set, get) => ({
     if (Array.isArray(payload.speakers) && networkId != null) {
       get().seedSpeakers(networkId, target, payload.speakers);
     }
-    if (payload.readState) get().applyReadState(networkId, target, payload.readState);
+    const readState =
+      payload.readState ||
+      ('unread' in payload || 'lastReadId' in payload || 'highlights' in payload || 'highlighted' in payload
+        ? payload
+        : null);
+    if (readState) get().applyReadState(networkId, target, readState);
   },
 
   clearDetached: () => {
@@ -998,7 +1003,8 @@ export const useBuffersStore = create<BuffersStoreState>((set, get) => ({
     const { key, buf } = getOrCreateBuffer(state.buffers, networkId, target, payload?.bufferId);
     if (typeof payload.lastReadId === 'number') buf.lastReadId = payload.lastReadId;
     if (typeof payload.unread === 'number') buf.unread = payload.unread;
-    if (typeof payload.highlighted === 'number') buf.highlighted = payload.highlighted;
+    const hl = typeof payload.highlighted === 'number' ? payload.highlighted : payload.highlights;
+    if (typeof hl === 'number') buf.highlighted = hl;
     if (typeof payload.highlightsCapped === 'boolean') buf.highlightsCapped = payload.highlightsCapped;
     if (useNetworksStore.getState().activeKey === bufferKey(buf.networkId, buf.target)) {
       buf.unread = 0;
