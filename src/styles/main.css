@@ -15,6 +15,7 @@
   --fg: #fcfcfa;
   --fg-muted: #939293;
   --accent: #a99dec;
+  --accent-fg: #090c0a;
   --good: #b3db82;
   --warn: #f9d978;
   --bad: #ed6c89;
@@ -506,6 +507,46 @@ button:disabled {
   color: var(--fg);
   border-color: var(--accent);
   background: var(--bg-soft);
+}
+
+/* Ignore rule Event type filter chips — unlayered so they win over the base
+   `button` element rule and clearly separate selected vs unselected choices in
+   every theme, including high-contrast / monochrome CRT themes. */
+button.ignore-level-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 9px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.35;
+  background: transparent;
+  color: var(--fg-muted);
+  border: 1px solid var(--border);
+  opacity: 0.78;
+  transition: background-color 0.12s ease, color 0.12s ease, border-color 0.12s ease, opacity 0.12s ease;
+}
+button.ignore-level-chip:hover:not(:disabled) {
+  color: var(--fg);
+  border-color: color-mix(in srgb, var(--accent) 60%, var(--border));
+  background: var(--bg-hover);
+  opacity: 1;
+}
+button.ignore-level-chip[aria-pressed='true'] {
+  background: var(--accent);
+  color: var(--accent-fg, #090c0a);
+  border-color: var(--accent);
+  font-weight: 700;
+  opacity: 1;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent);
+}
+button.ignore-level-chip[aria-pressed='true']:hover:not(:disabled) {
+  background: var(--accent);
+  color: var(--accent-fg, #090c0a);
+  border-color: var(--fg);
+  opacity: 1;
+  filter: brightness(1.06);
 }
 /* On mobile, footer buttons that pair an icon with a text label collapse to
    icon-only to save room — wrap the label in <span class="label"> to opt in.

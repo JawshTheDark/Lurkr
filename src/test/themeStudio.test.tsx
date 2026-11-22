@@ -140,6 +140,17 @@ describe('Theme Engine & Theme Studio', () => {
       useCustomThemeStore.getState().setConfig({ enabled: false });
     });
     expect(document.getElementById('lurkr-custom-theme-css')?.textContent || '').toBe('');
+
+    // --accent-fg maximizes WCAG contrast for bright CRT accents vs deep light-theme accents
+    act(() => {
+      useSettingsStore.setState({ values: { 'look.color.accent': '#39ff7a' }, loaded: true });
+    });
+    expect(document.documentElement.style.getPropertyValue('--accent-fg')).toBe('#090c0a');
+
+    act(() => {
+      useSettingsStore.setState({ values: { 'look.color.accent': '#0969da' }, loaded: true });
+    });
+    expect(document.documentElement.style.getPropertyValue('--accent-fg')).toBe('#ffffff');
   });
 
   it('applies themed nick palette, self color, and custom mIRC palette to chat rendering', () => {

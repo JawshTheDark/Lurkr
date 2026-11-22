@@ -7,7 +7,7 @@ import { useThemesStore } from '../stores/themes';
 import { isThemeSafeMode, useCustomThemeStore, type CustomThemeConfig } from '../stores/customTheme';
 import { useViewport } from './useViewport';
 import { usePrefersDark } from '../utils/prefersDark';
-import { parseComputedRgb, parseHex } from '../lib/color';
+import { contrastRatio, parseComputedRgb, parseHex } from '../lib/color';
 
 export const COLOR_VARS: Record<string, string> = {
   'look.color.bg': '--bg',
@@ -50,6 +50,15 @@ function computedColorScheme(fallbackBg: string): 'light' | 'dark' {
   const rgb = parseComputedRgb(resolved || '');
   if (rgb) return schemeFromLuma(rgb.r, rgb.g, rgb.b);
   return colorSchemeFor(fallbackBg);
+}
+
+/** Picks dark or light ink with the highest WCAG contrast against the accent surface. */
+function accentForegroundFor(accentValue: string): string {
+  const rgb = parseHex(accentValue) || parseComputedRgb(accentValue);
+  if (!rgb) return '#090c0a';
+  const darkInk = { r: 9, g: 12, b: 10 };
+  const lightInk = { r: 255, g: 255, b: 255 };
+  return contrastRatio(rgb, lightInk) > contrastRatio(rgb, darkInk) ? '#ffffff' : '#090c0a';
 }
 
 function upsertStyleTag(id: string, css: string): void {
@@ -166,6 +175,14 @@ export function useTheme(): void {
     for (const [key, cssVar] of Object.entries(COLOR_VARS)) {
       root.style.setProperty(cssVar, String(settings.effective(key)));
     }
+    const accentRaw = String(settings.effective('look.color.accent'));
+    const accentResolved =
+      parseHex(accentRaw) || parseComputedRgb(accentRaw)
+        ? accentRaw
+        : typeof getComputedStyle === 'function'
+          ? getComputedStyle(root).getPropertyValue('--accent')
+          : '';
+    root.style.setProperty('--accent-fg', accentForegroundFor(accentResolved || accentRaw));
 
     if (customEnabled && customConfig.borderBoostPct > 0) {
       const baseBorder = String(settings.effective('look.color.border'));

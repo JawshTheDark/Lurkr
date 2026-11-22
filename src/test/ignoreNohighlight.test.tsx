@@ -323,8 +323,35 @@ describe('NOHIGHLIGHT ignore option & runtime enforcement', () => {
     const allChip = Array.from(container.querySelectorAll('main button')).find(
       (b) => b.textContent?.trim() === 'ALL',
     ) as HTMLButtonElement;
+    const publicChip = Array.from(container.querySelectorAll('main button')).find(
+      (b) => b.textContent?.trim() === 'PUBLIC',
+    ) as HTMLButtonElement;
     const form = maskInput.closest('form')!;
 
+    expect(allChip.classList.contains('ignore-level-chip')).toBe(true);
+    expect(allChip.getAttribute('aria-pressed')).toBe('true');
+    expect(allChip.querySelector('svg')).not.toBeNull();
+    expect(publicChip.classList.contains('ignore-level-chip')).toBe(true);
+    expect(publicChip.getAttribute('aria-pressed')).toBe('false');
+    expect(publicChip.querySelector('svg')).toBeNull();
+
+    // Toggling PUBLIC shows its selected state & checkmark; toggling off clears it
+    act(() => {
+      publicChip.click();
+    });
+    expect(publicChip.getAttribute('aria-pressed')).toBe('true');
+    expect(publicChip.querySelector('svg')).not.toBeNull();
+    expect(allChip.getAttribute('aria-pressed')).toBe('false');
+    expect(allChip.querySelector('svg')).toBeNull();
+    act(() => {
+      publicChip.click();
+    });
+    expect(publicChip.getAttribute('aria-pressed')).toBe('false');
+    expect(publicChip.querySelector('svg')).toBeNull();
+
+    act(() => {
+      allChip.click();
+    });
     expect(allChip.getAttribute('aria-pressed')).toBe('true');
 
     // Checking NOHIGHLIGHT without clicking ALL first must auto-clear ALL
@@ -335,6 +362,7 @@ describe('NOHIGHLIGHT ignore option & runtime enforcement', () => {
 
     expect(noHlCheckbox.checked).toBe(true);
     expect(allChip.getAttribute('aria-pressed')).toBe('false');
+    expect(allChip.querySelector('svg')).toBeNull();
 
     // Unchecking NOHIGHLIGHT with no level chips selected restores ALL
     act(() => {

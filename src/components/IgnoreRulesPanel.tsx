@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { Pencil, Plus, ShieldOff, Trash2, X } from 'lucide-react';
+import { Check, Pencil, Plus, ShieldOff, Trash2, X } from 'lucide-react';
 import { CANONICAL_ORDER } from '../shared/ignoreLevels';
 import { durationToExpiry, type IgnorePatternKind } from '../shared/parseIgnore';
 import { type IgnoreEntryWithNetwork, useIgnoresStore } from '../stores/ignores';
@@ -259,13 +259,10 @@ export const IgnoreRulesPanel: React.FC<IgnoreRulesPanelProps> = ({
               type="button"
               aria-pressed={useAll}
               onClick={toggleAllLevels}
-              className={`rounded px-2 py-0.5 text-[11px] font-medium ${
-                useAll
-                  ? 'bg-[var(--accent)] text-white'
-                  : 'border border-[var(--border)] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]'
-              }`}
+              className="ignore-level-chip inline-flex items-center gap-1 rounded px-2 py-0.5 text-[11px] font-medium"
             >
-              ALL
+              {useAll && <Check className="w-3 h-3 shrink-0" aria-hidden="true" />}
+              <span>ALL</span>
             </button>
             {GRANULAR_LEVELS.map((lvl) => {
               const active = !useAll && levels.includes(lvl);
@@ -275,13 +272,10 @@ export const IgnoreRulesPanel: React.FC<IgnoreRulesPanelProps> = ({
                   type="button"
                   aria-pressed={active}
                   onClick={() => toggleLevel(lvl)}
-                  className={`rounded px-2 py-0.5 text-[11px] font-medium ${
-                    active
-                      ? 'bg-[var(--accent)] text-white'
-                      : 'border border-[var(--border)] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]'
-                  }`}
+                  className="ignore-level-chip inline-flex items-center gap-1 rounded px-2 py-0.5 text-[11px] font-medium"
                 >
-                  {lvl}
+                  {active && <Check className="w-3 h-3 shrink-0" aria-hidden="true" />}
+                  <span>{lvl}</span>
                 </button>
               );
             })}
