@@ -124,13 +124,19 @@ export const MessageList: React.FC<MessageListProps> = ({ buffer, onOpenReaction
     byNetworkIgnores,
   ]);
 
+  // Key on the newest visible row, not the row count: once a buffer is full
+  // (MAX_PER_BUFFER) every live line appends one and trims one in the same
+  // update, so the length never changes and the view would stop following.
+  const newestVisible = visibleMessages[visibleMessages.length - 1];
+  const newestVisibleKey = newestVisible?.id ?? newestVisible;
+
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
     if (atBottomRef.current && !buffer.detached) {
       el.scrollTop = el.scrollHeight;
     }
-  }, [visibleMessages.length, buffer.networkId, buffer.target, buffer.detached]);
+  }, [visibleMessages.length, newestVisibleKey, buffer.networkId, buffer.target, buffer.detached]);
 
   const handleScroll = () => {
     const el = scrollRef.current;
