@@ -7,7 +7,7 @@ import { formatServerSummary } from './networkCapabilities';
 
 export const APP_NAME = 'Lurkr';
 export const APP_VERSION =
-  typeof __LURKR_VERSION__ !== 'undefined' && __LURKR_VERSION__ ? __LURKR_VERSION__ : '2.7.7';
+  typeof __LURKR_VERSION__ !== 'undefined' && __LURKR_VERSION__ ? __LURKR_VERSION__ : '2.7.8';
 export const APP_LICENSE = 'MPL-2.0';
 export const APP_COPYRIGHT = 'Copyright (c) 2026 Brad Root';
 export const APP_DESCRIPTION = 'Standalone React desktop client for Lurker IRC with full parity';
