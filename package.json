@@ -2,7 +2,7 @@
   "name": "lurker-react-client",
   "desktopName": "lurkr.desktop",
   "private": true,
-  "version": "2.7.9",
+  "version": "2.7.10",
   "description": "Electron + React desktop client for Lurker IRC with full parity",
   "type": "module",
   "main": "dist-electron/main.js",
