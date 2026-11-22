@@ -5,6 +5,7 @@ import React, { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MessageList } from '../components/MessageList';
+import { MemberList } from '../components/MemberList';
 import { dispatchSlashCommand } from '../lib/commands/dispatch';
 import { api } from '../api';
 import * as socketBus from '../services/socketBus';
@@ -288,5 +289,37 @@ describe('Relay / Janus bots & Lurker 2.7 parity', () => {
     expect(useSettingsStore.getState().effective('look.message.compact.group_gap')).toBe(4);
     expect(useSettingsStore.getState().effective('look.message.layout')).toBe('traditional');
     void api;
+  });
+
+  it('positions the relay badge a clean gap after the nick instead of stretching to the far right edge', async () => {
+    useNetworksStore.setState({
+      networks: [{ id: 1, name: 'LurkerNet', host: 'irc.example', port: 6697, nick: 'Jawsh', tls: true }],
+      states: {
+        1: { networkId: 1, channels: ['#lurker'], state: 'connected', nick: 'Jawsh' },
+      },
+      activeKey: '1::#lurker',
+    });
+    useBuffersStore.getState().ensure(1, '#lurker');
+    useBuffersStore.getState().setMembers(1, '#lurker', [
+      { nick: 'LurkerBot', modes: ['v'], away: false },
+    ]);
+    useRelayBotsStore.getState().applySnapshot([
+      { networkId: 1, relayBots: [{ nick: 'LurkerBot', pattern: '' }] },
+    ]);
+
+    root = createRoot(container);
+    await act(async () => {
+      root!.render(React.createElement(MemberList, { networkId: 1, target: '#lurker' }));
+    });
+
+    const badge = container.querySelector('[data-testid="member-relay-badge"]') as HTMLElement;
+    expect(badge).not.toBeNull();
+    expect(badge.textContent).toBe('relay');
+    expect(badge.style.marginLeft).toBe('6px');
+
+    const nickEl = badge.previousElementSibling as HTMLElement;
+    expect(nickEl.textContent).toBe('LurkerBot');
+    expect(nickEl.style.flexGrow).toBe('0');
+    expect(nickEl.style.flexShrink).toBe('1');
   });
 });

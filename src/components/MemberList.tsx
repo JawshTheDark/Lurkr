@@ -443,7 +443,7 @@ export const MemberList: React.FC<MemberListProps> = ({ networkId, target }) => 
               }}
             >
               {prefix && (
-                <span style={{ color: 'var(--fg-muted)', fontWeight: 700, width: '1ch' }}>
+                <span style={{ color: 'var(--fg-muted)', fontWeight: 700, width: '1ch', flexShrink: 0 }}>
                   {prefix}
                 </span>
               )}
@@ -456,20 +456,23 @@ export const MemberList: React.FC<MemberListProps> = ({ networkId, target }) => 
                     ) || undefined,
                   overflow: 'hidden',
                   textOverflow: 'ellipsis',
-                  flex: 1,
+                  whiteSpace: 'nowrap',
                   minWidth: 0,
+                  flex: '0 1 auto',
                 }}
               >
                 {m.nick}
               </span>
               {isRelay && (
                 <span
+                  data-testid="member-relay-badge"
                   style={{
                     fontSize: '0.72em',
                     color: 'var(--accent)',
                     border: '1px solid var(--border)',
                     borderRadius: '3px',
                     padding: '0 4px',
+                    marginLeft: '6px',
                     flexShrink: 0,
                   }}
                 >
