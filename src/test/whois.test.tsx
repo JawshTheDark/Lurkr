@@ -311,8 +311,15 @@ describe('WHOIS store & modal', () => {
     expect(sent).toContainEqual({
       type: 'add-ignore',
       networkId: 1,
-      mask: 'PeerNick!*@*',
-      levels: ['ALL'],
+      rule: {
+        mask: 'PeerNick!*@*',
+        channels: null,
+        pattern: null,
+        patternKind: 'substr',
+        levels: ['ALL'],
+        isExcept: false,
+        expiresAt: null,
+      },
     });
 
     act(() => {

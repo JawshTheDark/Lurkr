@@ -521,10 +521,21 @@ export async function dispatchSlashCommand(
       return true;
     }
     case 'unignore': {
-      const id = Number(parts[0]);
-      if (!Number.isFinite(id)) return true;
-      useIgnoresStore.getState().remove(networkId, id);
-      pushLocalInfo(networkId, target, `Removed ignore rule #${id}`);
+      const arg = rest.trim();
+      if (!arg) {
+        pushLocalInfo(networkId, target, 'Usage: /unignore <id|mask>');
+        return true;
+      }
+      const store = useIgnoresStore.getState();
+      const id = Number(arg);
+      if (Number.isFinite(id) && /^\d+$/.test(arg)) {
+        const match = store.all().find((r) => r.id === id);
+        store.remove(match ? match.networkId : networkId, id);
+        pushLocalInfo(networkId, target, `Removed ignore rule #${id}`);
+        return true;
+      }
+      store.removeMask(networkId, arg);
+      pushLocalInfo(networkId, target, `Removed ignore rules matching ${arg}`);
       return true;
     }
     case 'dcc': {

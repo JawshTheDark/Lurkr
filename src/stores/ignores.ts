@@ -79,6 +79,7 @@ interface IgnoresState {
   applyUpdate: (networkId: number | null, rules: IgnoreEntry[]) => void;
   add: (rule: Record<string, unknown>) => void;
   remove: (networkId: number | null, id: number) => void;
+  removeMask: (networkId: number | null, mask: string) => void;
   reset: () => void;
 }
 
@@ -165,8 +166,43 @@ export const useIgnoresStore = create<IgnoresState>((set, get) => ({
     }
   },
 
-  add: (rule) => socketSend({ type: 'add-ignore', ...rule }),
+  add: (input) => {
+    const raw = input as {
+      networkId?: number | null;
+      rule?: Record<string, unknown>;
+      mask?: string | null;
+      channels?: string[] | null;
+      pattern?: string | null;
+      patternKind?: string;
+      levels?: string[];
+      isExcept?: boolean;
+      expiresAt?: string | null;
+    };
+    const { networkId = null, rule: nestedRule, ...flat } = raw;
+    const src = nestedRule ?? flat;
+    const levels = Array.isArray(src.levels) && src.levels.length > 0 ? src.levels : ['ALL'];
+    // Server `wsHub` falls back to `maskToRuleInput` (forcing levels=['ALL'])
+    // whenever `msg.rule === undefined` — always wrap rule fields under `rule`.
+    socketSend({
+      type: 'add-ignore',
+      networkId: networkId ?? null,
+      rule: {
+        mask: src.mask ?? null,
+        channels: src.channels ?? null,
+        pattern: src.pattern ?? null,
+        patternKind: src.patternKind ?? 'substr',
+        levels,
+        isExcept: src.isExcept === true,
+        expiresAt: src.expiresAt ?? null,
+      },
+    });
+  },
   remove: (networkId, id) => socketSend({ type: 'remove-ignore', networkId, id }),
+  removeMask: (networkId, mask) => {
+    const trimmed = (mask || '').trim();
+    if (!trimmed) return;
+    socketSend({ type: 'remove-ignore', networkId, mask: trimmed });
+  },
   reset: () => {
     mergedCache.clear();
     set({ global: [], byNetwork: {} });

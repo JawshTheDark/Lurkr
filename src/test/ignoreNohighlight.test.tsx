@@ -117,13 +117,15 @@ describe('NOHIGHLIGHT ignore option & runtime enforcement', () => {
     expect(sent).toContainEqual({
       type: 'add-ignore',
       networkId: null,
-      mask: 'bob',
-      channels: null,
-      pattern: null,
-      patternKind: 'substr',
-      levels: ['NOHIGHLIGHT'],
-      isExcept: false,
-      expiresAt: null,
+      rule: {
+        mask: 'bob',
+        channels: null,
+        pattern: null,
+        patternKind: 'substr',
+        levels: ['NOHIGHLIGHT'],
+        isExcept: false,
+        expiresAt: null,
+      },
     });
 
     // Seed saved rule and verify Edit round-trip does NOT silently add ALL
@@ -162,13 +164,15 @@ describe('NOHIGHLIGHT ignore option & runtime enforcement', () => {
       {
         type: 'add-ignore',
         networkId: null,
-        mask: 'bob',
-        channels: null,
-        pattern: null,
-        patternKind: 'substr',
-        levels: ['NOHIGHLIGHT'],
-        isExcept: false,
-        expiresAt: null,
+        rule: {
+          mask: 'bob',
+          channels: null,
+          pattern: null,
+          patternKind: 'substr',
+          levels: ['NOHIGHLIGHT'],
+          isExcept: false,
+          expiresAt: null,
+        },
       },
     ]);
   });
@@ -216,16 +220,46 @@ describe('NOHIGHLIGHT ignore option & runtime enforcement', () => {
     expect(sent[0]).toMatchObject({
       type: 'add-ignore',
       networkId: null,
-      mask: 'bob',
-      levels: ['NOHIGHLIGHT'],
+      rule: {
+        mask: 'bob',
+        levels: ['NOHIGHLIGHT'],
+      },
     });
     expect(sent[1]).toMatchObject({
       type: 'add-ignore',
       networkId: 1,
-      mask: 'alice',
-      levels: ['NOHIGHLIGHT'],
+      rule: {
+        mask: 'alice',
+        levels: ['NOHIGHLIGHT'],
+      },
     });
-    expect(typeof sent[1].expiresAt).toBe('string');
+    expect(typeof (sent[1].rule as Record<string, unknown>).expiresAt).toBe('string');
+
+    // /unignore resolves a global rule's true networkId (null) and supports mask removal
+    useIgnoresStore.setState({
+      global: [
+        {
+          id: 99,
+          mask: 'bob',
+          channels: null,
+          pattern: null,
+          patternKind: 'substr',
+          levels: ['NOHIGHLIGHT'],
+          isExcept: false,
+          expiresAt: null,
+          createdAt: '2026-11-21T00:00:00Z',
+        },
+      ],
+    });
+    sent = [];
+    await act(async () => {
+      await dispatchSlashCommand('/unignore 99', 1, '#lobby');
+      await dispatchSlashCommand('/unignore bob', 1, '#lobby');
+    });
+    expect(sent).toEqual([
+      { type: 'remove-ignore', networkId: null, id: 99 },
+      { type: 'remove-ignore', networkId: 1, mask: 'bob' },
+    ]);
   });
 
   it('suppresses highlight tint in MessageList and highlight notifications in notifier for NOHIGHLIGHT', () => {
@@ -379,14 +413,70 @@ describe('NOHIGHLIGHT ignore option & runtime enforcement', () => {
     expect(sent).toContainEqual({
       type: 'add-ignore',
       networkId: null,
-      mask: 'LurkerBot',
-      channels: null,
-      pattern: null,
-      patternKind: 'substr',
-      levels: ['NOHIGHLIGHT'],
-      isExcept: false,
-      expiresAt: null,
+      rule: {
+        mask: 'LurkerBot',
+        channels: null,
+        pattern: null,
+        patternKind: 'substr',
+        levels: ['NOHIGHLIGHT'],
+        isExcept: false,
+        expiresAt: null,
+      },
     });
+
+    // Simulate an existing server-returned ALL rule (~lurkerbot!*@* on network 1),
+    // edit it by toggling NOHIGHLIGHT (which clears ALL), and verify Save emits
+    // nested `rule: { levels: ['NOHIGHLIGHT'] }` so the server preserves NOHIGHLIGHT.
+    act(() => {
+      useIgnoresStore.setState({
+        byNetwork: {
+          1: [
+            {
+              id: 77,
+              mask: '~lurkerbot!*@*',
+              channels: null,
+              pattern: null,
+              patternKind: 'substr',
+              levels: ['ALL'],
+              isExcept: false,
+              expiresAt: null,
+              createdAt: '2026-11-22T00:00:00Z',
+            },
+          ],
+        },
+      });
+    });
+
+    const editBtn = container.querySelector('button[aria-label="Edit ignore rule"]') as HTMLButtonElement;
+    act(() => {
+      editBtn.click();
+    });
+    expect(allChip.getAttribute('aria-pressed')).toBe('true');
+
+    sent = [];
+    act(() => {
+      noHlCheckbox.click();
+    });
+    expect(allChip.getAttribute('aria-pressed')).toBe('false');
+    act(() => {
+      form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    });
+    expect(sent).toEqual([
+      { type: 'remove-ignore', networkId: 1, id: 77 },
+      {
+        type: 'add-ignore',
+        networkId: 1,
+        rule: {
+          mask: '~lurkerbot!*@*',
+          channels: null,
+          pattern: null,
+          patternKind: 'substr',
+          levels: ['NOHIGHLIGHT'],
+          isExcept: false,
+          expiresAt: null,
+        },
+      },
+    ]);
   });
 
   it('keeps relay bots visible in MemberList under NOHIGHLIGHT, hides under ALL+NOHIGHLIGHT, matches full userhost, and never hides self nick', () => {
