@@ -292,7 +292,15 @@ export const IgnoreRulesPanel: React.FC<IgnoreRulesPanelProps> = ({
               type="checkbox"
               data-testid="ignore-nohighlight-checkbox"
               checked={noHighlight}
-              onChange={(e) => setNoHighlight(e.target.checked)}
+              onChange={(e) => {
+                const checked = e.target.checked;
+                setNoHighlight(checked);
+                if (checked && useAll) {
+                  setUseAll(false);
+                } else if (!checked && !useAll && levels.length === 0) {
+                  setUseAll(true);
+                }
+              }}
             />
             <span>Suppress highlights only (don't hide) — NOHIGHLIGHT</span>
           </label>

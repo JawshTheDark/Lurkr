@@ -81,11 +81,13 @@ export const MemberList: React.FC<MemberListProps> = ({ networkId, target }) => 
       }
       return prefixModes.length;
     };
+    const ownNickLower = ownNick.toLowerCase();
     const visible = buf.members.filter(
       (m) =>
+        (ownNickLower !== '' && m.nick.toLowerCase() === ownNickLower) ||
         !ignores.isMemberIgnored(networkId, target, {
           nick: m.nick,
-          userhost: m.user && m.host ? `${m.user}@${m.host}` : null,
+          userhost: m.user && m.host ? `${m.nick}!${m.user}@${m.host}` : null,
         }),
     );
     const filtered = (q ? visible.filter((m) => m.nick.toLowerCase().includes(q)) : visible)
@@ -97,7 +99,7 @@ export const MemberList: React.FC<MemberListProps> = ({ networkId, target }) => 
         return a.nick.toLowerCase().localeCompare(b.nick.toLowerCase());
       });
     return { visibleCount: visible.length, sortedMembers: filtered };
-  }, [buf?.members, filter, networkId, target, prefixModes, ignoreGlobal, ignoreByNetwork]);
+  }, [buf?.members, filter, networkId, target, prefixModes, ownNick, ignoreGlobal, ignoreByNetwork]);
 
   const contextItems = (): ContextMenuItem[] => {
     const m = ctx.member;

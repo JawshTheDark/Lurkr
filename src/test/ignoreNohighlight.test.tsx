@@ -8,6 +8,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { MemoryRouter } from 'react-router-dom';
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { IgnoreModal } from '../components/IgnoreModal';
+import { MemberList } from '../components/MemberList';
 import { MessageList } from '../components/MessageList';
 import { dispatchSlashCommand } from '../lib/commands/dispatch';
 import { notifyForEvent } from '../services/notifier';
@@ -16,6 +17,7 @@ import { useBuffersStore } from '../stores/buffers';
 import { useChannelNotifyStore } from '../stores/channelNotify';
 import { useIgnoresStore } from '../stores/ignores';
 import { useNetworksStore } from '../stores/networks';
+import { useRelayBotsStore } from '../stores/relayBots';
 import { useSettingsStore } from '../stores/settings';
 import { useToastsStore } from '../stores/toasts';
 import { SettingsView } from '../views/SettingsView';
@@ -297,5 +299,160 @@ describe('NOHIGHLIGHT ignore option & runtime enforcement', () => {
       text: 'hey Jawsh real ping',
     });
     expect(useToastsStore.getState().items.length).toBe(1);
+  });
+
+  it('auto-clears ALL when checking NOHIGHLIGHT directly so relay bots are not added as ALL+NOHIGHLIGHT', () => {
+    root = createRoot(container);
+    act(() => {
+      root!.render(
+        React.createElement(MemoryRouter, null, React.createElement(SettingsView)),
+      );
+    });
+
+    const navBtn = Array.from(container.querySelectorAll('nav button')).find((b) =>
+      b.textContent?.includes('Ignore Rules'),
+    ) as HTMLButtonElement;
+    act(() => {
+      navBtn.click();
+    });
+
+    const maskInput = container.querySelector('input[aria-label="Ignore mask"]') as HTMLInputElement;
+    const noHlCheckbox = container.querySelector(
+      '[data-testid="ignore-nohighlight-checkbox"]',
+    ) as HTMLInputElement;
+    const allChip = Array.from(container.querySelectorAll('main button')).find(
+      (b) => b.textContent?.trim() === 'ALL',
+    ) as HTMLButtonElement;
+    const form = maskInput.closest('form')!;
+
+    expect(allChip.getAttribute('aria-pressed')).toBe('true');
+
+    // Checking NOHIGHLIGHT without clicking ALL first must auto-clear ALL
+    act(() => {
+      setInputValue(maskInput, 'LurkerBot');
+      noHlCheckbox.click();
+    });
+
+    expect(noHlCheckbox.checked).toBe(true);
+    expect(allChip.getAttribute('aria-pressed')).toBe('false');
+
+    // Unchecking NOHIGHLIGHT with no level chips selected restores ALL
+    act(() => {
+      noHlCheckbox.click();
+    });
+    expect(allChip.getAttribute('aria-pressed')).toBe('true');
+
+    // Re-checking NOHIGHLIGHT clears ALL again; submitting sends ['NOHIGHLIGHT'] only
+    act(() => {
+      noHlCheckbox.click();
+      form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    });
+
+    expect(sent).toContainEqual({
+      type: 'add-ignore',
+      networkId: null,
+      mask: 'LurkerBot',
+      channels: null,
+      pattern: null,
+      patternKind: 'substr',
+      levels: ['NOHIGHLIGHT'],
+      isExcept: false,
+      expiresAt: null,
+    });
+  });
+
+  it('keeps relay bots visible in MemberList under NOHIGHLIGHT, hides under ALL+NOHIGHLIGHT, matches full userhost, and never hides self nick', () => {
+    useRelayBotsStore.getState().reset();
+    try {
+      useNetworksStore.setState({
+        networks: [{ id: 1, name: 'LurkerNet', host: 'irc.example', port: 6697, nick: 'Jawsh', tls: true }],
+        states: {
+          1: { networkId: 1, channels: ['#lobby'], state: 'connected', nick: 'Jawsh' },
+        },
+        activeKey: '1::#lobby',
+      });
+      useBuffersStore.getState().ensure(1, '#lobby', 10);
+      useBuffersStore.getState().setMembers(1, '#lobby', [
+        { nick: 'LurkerBot', user: 'relay', host: 'bot.example', modes: ['v'], away: false },
+        { nick: 'Jawsh', user: 'jawsh', host: 'self.example', modes: [], away: false },
+        { nick: 'Troll', user: 'troll', host: 'bad.example', modes: [], away: false },
+      ]);
+      useRelayBotsStore.getState().applySnapshot([
+        { networkId: 1, relayBots: [{ nick: 'LurkerBot', pattern: '' }] },
+      ]);
+
+      useIgnoresStore.setState({
+        global: [
+          {
+            id: 1,
+            mask: 'LurkerBot',
+            channels: null,
+            pattern: null,
+            patternKind: 'substr',
+            levels: ['NOHIGHLIGHT'],
+            isExcept: false,
+            expiresAt: null,
+            createdAt: '2026-11-21T00:00:00Z',
+          },
+          {
+            id: 2,
+            mask: 'Troll!*@bad.example',
+            channels: null,
+            pattern: null,
+            patternKind: 'substr',
+            levels: ['ALL'],
+            isExcept: false,
+            expiresAt: null,
+            createdAt: '2026-11-21T00:00:00Z',
+          },
+          {
+            id: 3,
+            mask: '*!*@self.example',
+            channels: null,
+            pattern: null,
+            patternKind: 'substr',
+            levels: ['ALL'],
+            isExcept: false,
+            expiresAt: null,
+            createdAt: '2026-11-21T00:00:00Z',
+          },
+        ],
+      });
+
+      root = createRoot(container);
+      act(() => {
+        root!.render(React.createElement(MemberList, { networkId: 1, target: '#lobby' }));
+      });
+
+      // Relay bot under NOHIGHLIGHT-only stays visible with its relay badge;
+      // Troll!*@bad.example matches full nick!user@host; self nick Jawsh stays visible.
+      expect(container.textContent).toContain('LurkerBot');
+      expect(container.querySelector('[data-testid="member-relay-badge"]')?.textContent).toBe('relay');
+      expect(container.textContent).not.toContain('Troll');
+      expect(container.textContent).toContain('Jawsh');
+
+      // An accidental ALL + NOHIGHLIGHT rule hides the relay bot from MemberList
+      act(() => {
+        useIgnoresStore.setState({
+          global: [
+            {
+              id: 1,
+              mask: 'LurkerBot',
+              channels: null,
+              pattern: null,
+              patternKind: 'substr',
+              levels: ['ALL', 'NOHIGHLIGHT'],
+              isExcept: false,
+              expiresAt: null,
+              createdAt: '2026-11-21T00:00:00Z',
+            },
+          ],
+        });
+      });
+
+      expect(container.textContent).not.toContain('LurkerBot');
+    } finally {
+      useRelayBotsStore.getState().reset();
+    }
   });
 });
