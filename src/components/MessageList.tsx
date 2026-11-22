@@ -29,6 +29,7 @@ import { useDesktopUiStore } from '../stores/desktopUi';
 import { socketSend } from '../services/socketBus';
 import { formatTimestamp, formatDate } from '../utils/timestamp';
 import { resolveThemedNickColor } from '../lib/nickTheme';
+import { buildIgnoreSubmenuItem } from '../lib/ignoreMenu';
 import { replyExcerpt, stripReplyAddress } from '../utils/replyText';
 import { isChannelTarget } from '../shared/channels';
 import { currentLayoutValue } from '../shared/settingsRenames';
@@ -765,14 +766,7 @@ export const MessageList: React.FC<MessageListProps> = ({ buffer, onOpenReaction
                   onClick: () =>
                     useRelayBotsStore.getState().setRelay(nid, nickCtx.nick, !marked),
                 },
-                {
-                  label: 'Ignore',
-                  danger: true,
-                  onClick: () =>
-                    useIgnoresStore
-                      .getState()
-                      .add({ networkId: nid, mask: `${nickCtx.nick}!*@*`, levels: ['ALL'] }),
-                },
+                buildIgnoreSubmenuItem(nid, nickCtx.nick),
               );
             }
           }

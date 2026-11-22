@@ -20,6 +20,7 @@ import { useDccStore } from '../stores/dcc';
 import { useConfigStore } from '../stores/config';
 import { socketSend } from '../services/socketBus';
 import { resolveThemedNickColor } from '../lib/nickTheme';
+import { buildIgnoreSubmenuItem } from '../lib/ignoreMenu';
 import { prefixOf } from '../utils/memberPrefix';
 import { ContextMenu, type ContextMenuItem } from './ContextMenu';
 
@@ -187,12 +188,7 @@ export const MemberList: React.FC<MemberListProps> = ({ networkId, target }) => 
           label: markedRelay ? 'Unmark relay bot' : 'Mark as relay bot',
           onClick: () => useRelayBotsStore.getState().setRelay(networkId, m.nick, !markedRelay),
         },
-        {
-          label: 'Ignore',
-          danger: true,
-          onClick: () =>
-            useIgnoresStore.getState().add({ networkId, mask: `${m.nick}!*@*`, levels: ['ALL'] }),
-        },
+        buildIgnoreSubmenuItem(networkId, m.nick),
       );
     }
 

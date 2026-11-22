@@ -573,4 +573,134 @@ describe('NOHIGHLIGHT ignore option & runtime enforcement', () => {
       useRelayBotsStore.getState().reset();
     }
   });
+
+  it('opens a cascading Ignore type dropdown on MemberList right-click (flipped inward on right edge) and sends selected individual rule', () => {
+    useRelayBotsStore.getState().reset();
+    try {
+      useNetworksStore.setState({
+        networks: [{ id: 1, name: 'LurkerNet', host: 'irc.example', port: 6697, nick: 'Jawsh', tls: true }],
+        states: {
+          1: { networkId: 1, channels: ['#lobby'], state: 'connected', nick: 'Jawsh' },
+        },
+        activeKey: '1::#lobby',
+      });
+      useBuffersStore.getState().ensure(1, '#lobby', 10);
+      useBuffersStore.getState().setMembers(1, '#lobby', [
+        { nick: 'LurkerBot', user: 'relay', host: 'bot.example', modes: ['v'], away: false },
+        { nick: 'Jawsh', user: 'jawsh', host: 'self.example', modes: [], away: false },
+      ]);
+      useRelayBotsStore.getState().applySnapshot([
+        { networkId: 1, relayBots: [{ nick: 'LurkerBot', pattern: '' }] },
+      ]);
+
+      root = createRoot(container);
+      act(() => {
+        root!.render(React.createElement(MemberList, { networkId: 1, target: '#lobby' }));
+      });
+
+      const botRow = container.querySelector('[title="LurkerBot (Relay bot)"]')!;
+      act(() => {
+        botRow.dispatchEvent(
+          new MouseEvent('contextmenu', {
+            bubbles: true,
+            clientX: window.innerWidth - 20,
+            clientY: 120,
+          }),
+        );
+      });
+
+      const ignoreBtn = Array.from(container.querySelectorAll('button')).find(
+        (b) => b.textContent?.trim() === 'Ignore',
+      ) as HTMLButtonElement;
+      expect(ignoreBtn).toBeDefined();
+      expect(ignoreBtn.getAttribute('aria-haspopup')).toBe('menu');
+
+      act(() => {
+        ignoreBtn.click();
+      });
+
+      const subMenu = container.querySelector('[role="menu"][aria-label="Ignore"]') as HTMLElement;
+      expect(subMenu).not.toBeNull();
+      // Submenu must flip to the left so right-edge nicklist menus never clip off-screen
+      expect(subMenu.style.right).toBe('calc(100% - 4px)');
+
+      const subLabels = Array.from(subMenu.querySelectorAll('button')).map(
+        (b) => b.textContent?.trim() || '',
+      );
+      expect(subLabels).toEqual([
+        'ALL — Hide everything',
+        'NOHIGHLIGHT — Suppress highlights',
+        'NOUNREAD — Mute unread counts',
+        'NONOTIFY — Mute notifications',
+        'PUBLIC — Channel messages',
+        'MSGS — Direct messages',
+        'NOTICES',
+        'ACTIONS',
+        'JOINS',
+        'PARTS',
+        'QUITS',
+        'NICKS',
+        'KICKS',
+        'MODES',
+        'TOPICS',
+      ]);
+
+      const noHlBtn = Array.from(subMenu.querySelectorAll('button')).find((b) =>
+        b.textContent?.includes('NOHIGHLIGHT'),
+      ) as HTMLButtonElement;
+      act(() => {
+        noHlBtn.click();
+      });
+
+      expect(container.querySelector('[role="menu"]')).toBeNull();
+      expect(sent[0]).toEqual({
+        type: 'add-ignore',
+        networkId: 1,
+        rule: {
+          mask: 'LurkerBot!*@*',
+          channels: null,
+          pattern: null,
+          patternKind: 'substr',
+          levels: ['NOHIGHLIGHT'],
+          isExcept: false,
+          expiresAt: null,
+        },
+      });
+
+      // Re-open and pick an individual event level (PUBLIC)
+      act(() => {
+        botRow.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 50, clientY: 120 }));
+      });
+      const ignoreBtn2 = Array.from(container.querySelectorAll('button')).find(
+        (b) => b.textContent?.trim() === 'Ignore',
+      ) as HTMLButtonElement;
+      act(() => {
+        ignoreBtn2.click();
+      });
+      const subMenu2 = container.querySelector('[role="menu"][aria-label="Ignore"]') as HTMLElement;
+      expect(subMenu2.style.left).toBe('calc(100% - 4px)');
+      const publicBtn = Array.from(subMenu2.querySelectorAll('button')).find((b) =>
+        b.textContent?.includes('PUBLIC'),
+      ) as HTMLButtonElement;
+      act(() => {
+        publicBtn.click();
+      });
+
+      expect(sent[1]).toEqual({
+        type: 'add-ignore',
+        networkId: 1,
+        rule: {
+          mask: 'LurkerBot!*@*',
+          channels: null,
+          pattern: null,
+          patternKind: 'substr',
+          levels: ['PUBLIC'],
+          isExcept: false,
+          expiresAt: null,
+        },
+      });
+    } finally {
+      useRelayBotsStore.getState().reset();
+    }
+  });
 });
