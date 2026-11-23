@@ -47,6 +47,7 @@ const NOISE_TYPES = new Set(['join', 'part', 'quit', 'nick', 'mode', 'chghost'])
 export const MessageList: React.FC<MessageListProps> = ({ buffer, onOpenReactionPicker }) => {
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const atBottomRef = useRef(true);
+  const lastScrollTopRef = useRef(0);
   const [showJumpBottom, setShowJumpBottom] = useState(false);
   const [dragOver, setDragOver] = useState(false);
 
@@ -143,7 +144,15 @@ export const MessageList: React.FC<MessageListProps> = ({ buffer, onOpenReaction
     const el = scrollRef.current;
     if (!el) return;
     const distFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
-    atBottomRef.current = distFromBottom < 48;
+    const scrolledUp = el.scrollTop < lastScrollTopRef.current;
+    lastScrollTopRef.current = el.scrollTop;
+    // Only an upward scroll unpins. Content can grow below the view (a link
+    // preview or image arriving) before the scroll event from our own pin is
+    // dispatched; Chromium holds that event until the next frame, which for a
+    // hidden or occluded window can be much later. Reading that larger gap as
+    // "the user scrolled away" left the list stuck until a manual scroll.
+    if (distFromBottom < 48) atBottomRef.current = true;
+    else if (scrolledUp) atBottomRef.current = false;
     setShowJumpBottom(distFromBottom > 160 || buffer.detached);
 
     if (el.scrollTop < 120 && buffer.hasMoreOlder && !buffer.loadingHistory && buffer.oldestId != null) {
@@ -184,6 +193,10 @@ export const MessageList: React.FC<MessageListProps> = ({ buffer, onOpenReaction
   // shrinks this list from the bottom without moving scrollTop or firing a
   // scroll event, so the newest lines slid under the composer instead of being
   // pushed up above it.
+  //
+  // The rows are watched too: a link preview card, an image or an embed renders
+  // after its message (once the preview resolves or the media loads), growing
+  // the content below the view without a new message to re-pin it.
   useEffect(() => {
     const el = scrollRef.current;
     if (!el || typeof ResizeObserver === 'undefined') return;
@@ -193,7 +206,21 @@ export const MessageList: React.FC<MessageListProps> = ({ buffer, onOpenReaction
       }
     });
     ro.observe(el);
-    return () => ro.disconnect();
+    for (const row of Array.from(el.children)) ro.observe(row);
+    let mo: MutationObserver | null = null;
+    if (typeof MutationObserver !== 'undefined') {
+      mo = new MutationObserver((records) => {
+        for (const r of records) {
+          r.addedNodes.forEach((n) => n instanceof Element && ro.observe(n));
+          r.removedNodes.forEach((n) => n instanceof Element && ro.unobserve(n));
+        }
+      });
+      mo.observe(el, { childList: true });
+    }
+    return () => {
+      mo?.disconnect();
+      ro.disconnect();
+    };
   }, [buffer.detached]);
 
   const handleDrop = async (e: React.DragEvent) => {
