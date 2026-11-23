@@ -18,9 +18,21 @@ const TYPING_DURATIONS: Record<string, number> = { active: 6000, paused: 30000 }
 const PENDING_JOIN_TIMEOUT = 10000;
 const PENDING_OPEN_TIMEOUT = 10000;
 
-const namesAsked = new Set<string>();
+const NAMES_RETRY_COOLDOWN_MS = 8000;
+const namesAsked = new Map<string, number>();
 export function resetNamesAsked(): void {
   namesAsked.clear();
+}
+export function clearNamesAskedForChannel(networkId: number | string | null, target: string): void {
+  if (networkId == null || !target) return;
+  namesAsked.delete(`${networkId}::${target.toLowerCase()}`);
+}
+export function clearNamesAskedForNetwork(networkId: number | string | null): void {
+  if (networkId == null) return;
+  const prefix = `${networkId}::`;
+  for (const k of Array.from(namesAsked.keys())) {
+    if (k.startsWith(prefix)) namesAsked.delete(k);
+  }
 }
 
 const typingTimers = new Map<string, ReturnType<typeof setTimeout>>();
@@ -311,7 +323,7 @@ interface BuffersStoreState {
     networkId: number | string,
     target: string,
     members: BufferMember[],
-    kind?: 'full' | 'partial',
+    kindOrOpts?: 'full' | 'partial' | { provisional?: boolean },
   ) => void;
   clearMembers: (networkId: number | string, target: string) => void;
   ensureMembers: (networkId: number | string | null, target: string) => boolean;
@@ -746,16 +758,40 @@ export const useBuffersStore = create<BuffersStoreState>((set, get) => ({
     }));
   },
 
-  setMembers: (networkId, target, members, kind = 'full') => {
+  setMembers: (networkId, target, members, kindOrOpts = 'full') => {
     const state = get();
     const { key, buf } = getOrCreateBuffer(state.buffers, networkId, target);
-    const updated = { ...buf, members, membersKnown: kind };
+    const provisional =
+      typeof kindOrOpts === 'object' ? !!kindOrOpts.provisional : kindOrOpts === 'partial';
+    const normalized: BufferMember[] = (members || []).map((m: any) =>
+      typeof m === 'string'
+        ? { nick: m, modes: [], away: false }
+        : {
+            nick: m.nick,
+            modes: m.modes || [],
+            away: !!m.away,
+            user: m.user,
+            host: m.host,
+            account: m.account,
+          },
+    );
+    if (provisional) {
+      if (buf.membersKnown === 'full') return;
+      if (buf.membersKnown === 'partial' && normalized.length === 0) return;
+      if (normalized.length === 0) return;
+      const updated = { ...buf, members: normalized, membersKnown: 'partial' as const };
+      set((s) => ({ buffers: { ...s.buffers, [key]: updated } }));
+      return;
+    }
+    namesAsked.delete(`${Number(networkId)}::${buf.target.toLowerCase()}`);
+    const updated = { ...buf, members: normalized, membersKnown: 'full' as const };
     set((s) => ({ buffers: { ...s.buffers, [key]: updated } }));
   },
 
   clearMembers: (networkId, target) => {
     const key = resolveExistingKey(get().buffers, networkId, target);
     if (!key) return;
+    namesAsked.delete(`${Number(networkId)}::${target.toLowerCase()}`);
     set((s) => ({
       buffers: {
         ...s.buffers,
@@ -768,16 +804,19 @@ export const useBuffersStore = create<BuffersStoreState>((set, get) => ({
     if (networkId == null || !isChannelTarget(target)) return false;
     const key = resolveExistingKey(get().buffers, networkId, target);
     const buf = key ? get().buffers[key] : null;
-    if (buf && buf.membersKnown === 'full') return false;
-    const askKey = `${networkId}::${target.toLowerCase()}`;
-    if (namesAsked.has(askKey)) return false;
+    if (buf && (!buf.joined || buf.membersKnown === 'full')) return false;
+    const netState = useNetworksStore.getState().states[Number(networkId)];
+    if (netState && netState.state !== 'connected') return false;
+    const askKey = `${Number(networkId)}::${(buf?.target ?? target).toLowerCase()}`;
+    const lastAsked = namesAsked.get(askKey);
+    if (lastAsked != null && Date.now() - lastAsked < NAMES_RETRY_COOLDOWN_MS) return false;
     const sent = socketSend({
       type: 'names',
       networkId: Number(networkId),
       ...(buf?.id != null ? { bufferId: buf.id } : {}),
-      target,
+      target: buf?.target ?? target,
     });
-    if (sent) namesAsked.add(askKey);
+    if (sent) namesAsked.set(askKey, Date.now());
     return sent;
   },
 
@@ -994,6 +1033,7 @@ export const useBuffersStore = create<BuffersStoreState>((set, get) => ({
     if (!joined) {
       buf.members = [];
       buf.membersKnown = 'none';
+      clearNamesAskedForChannel(networkId, buf.target);
     }
     set((s) => ({ buffers: { ...s.buffers, [key]: buf } }));
   },
@@ -1086,10 +1126,11 @@ export const useBuffersStore = create<BuffersStoreState>((set, get) => ({
     set((s) => ({ buffers: { ...s.buffers, [key]: buf } }));
     useNetworksStore.getState().setActive(buf.networkId, buf.target);
 
-    if (buf.unseeded || buf.pendingRefetch) {
+    const needsHydration = buf.unseeded || buf.pendingRefetch;
+    if (needsHydration) {
       get().reattachToLive(buf.networkId, buf.target);
     }
-    if (buf.kind === 'channel' && buf.joined && buf.membersKnown !== 'full') {
+    if (!needsHydration && !buf.loadingHistory && buf.kind === 'channel' && buf.joined && buf.membersKnown !== 'full') {
       get().ensureMembers(buf.networkId, buf.target);
     }
   },

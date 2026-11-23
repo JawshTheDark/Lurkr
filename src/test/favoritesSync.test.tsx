@@ -8,7 +8,9 @@ import { createRoot, type Root } from 'react-dom/client';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { BufferList } from '../components/BufferList';
+import { MemberList } from '../components/MemberList';
 import { resetSession } from '../stores/sessionReset';
+import { registerAllSessionResets } from '../stores/registerResets';
 import { connectSocket, resetSocket } from '../services/socket';
 import { useBuffersStore } from '../stores/buffers';
 import { useChannelNotifyStore } from '../stores/channelNotify';
@@ -22,6 +24,7 @@ import { usePinsStore } from '../stores/pins';
 import { seenEventCursor, setSeenEventCursor } from '../lib/seenEventCursor';
 
 (globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+registerAllSessionResets();
 
 describe('Upstream snapshot, favorites-changed & sidebar sync', () => {
   const origWebSocket = globalThis.WebSocket;
@@ -265,5 +268,154 @@ describe('Upstream snapshot, favorites-changed & sidebar sync', () => {
     expect(useNicklistCollapseStore.getState().isCollapsed(1, '#lurker')).toBe(false);
     expect(useChannelNotifyStore.getState().levelFor(1, '#lurker-spooky')).toBe('default');
     expect(useFavoritesStore.getState().isFavorite(1, 'd3fc0n')).toBe(false);
+  });
+
+  it('loads and preserves MemberList across connecting state, provisional membersPending names, reconnect snapshot, member-update, and part', async () => {
+    connectSocket();
+    const emitJson = (obj: unknown) =>
+      lastSocket!.emit('message', { data: JSON.stringify(obj) });
+
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 10));
+    });
+
+    act(() => {
+      emitJson({
+        kind: 'snapshot',
+        cursor: 900,
+        networks: [
+          {
+            networkId: 1,
+            name: 'Libera.Chat',
+            state: 'connecting',
+            nick: 'Jawsh',
+            channels: [{ name: '#lurker', members: [], membersPending: true, joined: true }],
+          },
+        ],
+      });
+      emitJson({
+        kind: 'backlog',
+        networkId: 1,
+        target: '#lurker',
+        joined: true,
+        hasMoreOlder: false,
+        events: [
+          {
+            id: 901,
+            networkId: 1,
+            target: '#lurker',
+            type: 'message',
+            nick: 'amiantos',
+            text: 'hi',
+            time: '2026-11-22T00:00:00Z',
+          },
+        ],
+      });
+    });
+
+    root = createRoot(container);
+    act(() => {
+      root!.render(React.createElement(MemberList, { networkId: 1, target: '#lurker' }));
+    });
+
+    // Not connected yet -> must not show Loading forever or poison namesAsked
+    expect(container.textContent).toContain('0 members');
+    expect(container.textContent).not.toContain('Loading members…');
+    expect(lastSocket!.sent.filter((p) => p.type === 'names')).toHaveLength(0);
+
+    // Network reaches connected -> Loading members… displays and MemberList requests names
+    act(() => {
+      emitJson({ kind: 'irc', type: 'state', networkId: 1, state: 'connected', nick: 'Jawsh' });
+    });
+    expect(container.textContent).toContain('Loading members…');
+    expect(lastSocket!.sent.filter((p) => p.type === 'names')).toEqual([
+      { type: 'names', networkId: 1, target: '#lurker' },
+    ]);
+
+    // Provisional partial names (membersPending: true) renders partial list without marking full
+    act(() => {
+      emitJson({
+        kind: 'irc',
+        type: 'names',
+        networkId: 1,
+        target: '#lurker',
+        membersPending: true,
+        members: [{ nick: 'Jawsh', modes: [], away: false }],
+      });
+    });
+    expect(container.textContent).toContain('1+ members (loading…)');
+    expect(container.textContent).toContain('Jawsh');
+
+    // Empty provisional frame does not wipe held partial list
+    act(() => {
+      emitJson({
+        kind: 'irc',
+        type: 'names',
+        networkId: 1,
+        target: '#lurker',
+        membersPending: true,
+        members: [],
+      });
+    });
+    expect(container.textContent).toContain('Jawsh');
+
+    // Authoritative 366 / full names settles member list as full
+    act(() => {
+      emitJson({
+        kind: 'irc',
+        type: 'names',
+        networkId: 1,
+        target: '#lurker',
+        members: [
+          { nick: 'Jawsh', modes: ['o'], away: false },
+          { nick: 'amiantos', modes: [], away: false },
+        ],
+      });
+    });
+    expect(container.textContent).toContain('2 members');
+    expect(container.textContent).toContain('amiantos');
+
+    // Reconnect snapshot with membersPending: true preserves already-held full list
+    act(() => {
+      emitJson({
+        kind: 'snapshot',
+        networks: [
+          {
+            networkId: 1,
+            name: 'Libera.Chat',
+            state: 'connected',
+            nick: 'Jawsh',
+            channels: [{ name: '#lurker', members: [], membersPending: true, joined: true }],
+          },
+        ],
+      });
+    });
+    expect(container.textContent).toContain('2 members');
+    expect(container.textContent).toContain('amiantos');
+
+    // Upstream member-update ({ member: { nick, modes, away } }) updates held member
+    act(() => {
+      emitJson({
+        kind: 'irc',
+        type: 'member-update',
+        networkId: 1,
+        target: '#lurker',
+        member: { nick: 'amiantos', modes: ['v'], away: true },
+      });
+    });
+    const updatedAmiantos = useBuffersStore
+      .getState()
+      .buffers['1::#lurker']?.members.find((m) => m.nick === 'amiantos');
+    expect(updatedAmiantos?.away).toBe(true);
+    expect(updatedAmiantos?.modes).toEqual(['v']);
+
+    // channel-parted ignores unknown channels and clears held channel cleanly without stuck Loading
+    act(() => {
+      emitJson({ kind: 'irc', type: 'channel-parted', networkId: 1, target: '#never-visited' });
+      emitJson({ kind: 'irc', type: 'channel-parted', networkId: 1, target: '#lurker' });
+    });
+    expect(useBuffersStore.getState().buffers['1::#never-visited']).toBeUndefined();
+    expect(container.textContent).toContain('0 members');
+    expect(container.textContent).not.toContain('Loading members…');
   });
 });

@@ -15,7 +15,13 @@ import { notifyForEvent } from './notifier';
 import { useAuthStore } from '../stores/auth';
 import { useAvatarSetsStore } from '../stores/avatarSets';
 import { useBookmarksStore } from '../stores/bookmarks';
-import { useBuffersStore, newestHeldId, resetNamesAsked } from '../stores/buffers';
+import {
+  useBuffersStore,
+  newestHeldId,
+  resetNamesAsked,
+  clearNamesAskedForChannel,
+  clearNamesAskedForNetwork,
+} from '../stores/buffers';
 import { useChanlistStore } from '../stores/chanlist';
 import { useChannelNotifyStore } from '../stores/channelNotify';
 import { useConfigStore } from '../stores/config';
@@ -198,12 +204,10 @@ function applySnapshot(snapshot: any[], globalIgnores: any[] = []): void {
           ? { nick: m, modes: [], away: false }
           : { nick: m.nick, modes: m.modes || [], away: !!m.away, user: m.user, host: m.host, account: m.account },
       );
-      if (ch.membersPending) {
-        buffers.clearMembers(net.networkId, ch.name);
-      } else {
-        buffers.setMembers(net.networkId, ch.name, normalized, 'full');
-      }
       buffers.setJoined(net.networkId, ch.name, ch.joined !== false);
+      buffers.setMembers(net.networkId, ch.name, normalized, {
+        provisional: !!ch.membersPending,
+      });
       if (ch.topic !== undefined) {
         buffers.setTopic(net.networkId, ch.name, ch.topic, {
           setBy: ch.topicSetBy ?? null,
@@ -308,12 +312,14 @@ function handleIrcEvent(event: any): void {
   switch (event.type) {
     case 'state':
       networks.applyState(event);
-      if (
-        typeof event.networkId === 'number' &&
-        (event.state === 'connecting' || event.state === 'disconnected')
-      ) {
-        serverHistoryDepth.delete(event.networkId);
-        serverVersionProbeSent.delete(event.networkId);
+      if (typeof event.networkId === 'number') {
+        if (event.state === 'connected') {
+          clearNamesAskedForNetwork(event.networkId);
+        }
+        if (event.state === 'connecting' || event.state === 'disconnected') {
+          serverHistoryDepth.delete(event.networkId);
+          serverVersionProbeSent.delete(event.networkId);
+        }
       }
       break;
     case 'message':
@@ -490,19 +496,19 @@ function handleIrcEvent(event: any): void {
       break;
     case 'names':
       if (event.target && Array.isArray(event.members)) {
-        buffers.setMembers(
-          event.networkId,
-          event.target,
-          event.members,
-          event.partial ? 'partial' : 'full',
-        );
+        buffers.setMembers(event.networkId, event.target, event.members, {
+          provisional: !!(event.membersPending || event.partial),
+        });
       }
       break;
-    case 'member-update':
-      if (event.target && event.nick) {
-        buffers.updateMember(event.networkId, event.target, event.nick, event.patch || event);
+    case 'member-update': {
+      const patch = event.member || event.patch || event;
+      const nick = event.member?.nick || event.nick;
+      if (event.target && nick) {
+        buffers.updateMember(event.networkId, event.target, nick, patch);
       }
       break;
+    }
     case 'user-metadata':
       networks.applyUserMetadata(event.networkId, event.nick, event.values ?? null);
       break;
@@ -519,6 +525,7 @@ function handleIrcEvent(event: any): void {
     case 'channel-joined': {
       const channel = event.channel || event.target;
       if (channel) {
+        clearNamesAskedForChannel(event.networkId, channel);
         buffers.setJoined(event.networkId, channel, true);
         if (buffers.confirmPendingJoin(event.networkId, channel)) {
           buffers.activate(event.networkId, channel);
@@ -603,11 +610,19 @@ function handleIrcEvent(event: any): void {
     case 'dcc-chat-offer-closed':
       dismissDccOfferToast(dccOfferKey(event.networkId, event.from));
       break;
-    case 'channel-parted':
-      if (event.channel || event.target) {
-        buffers.setJoined(event.networkId, event.channel || event.target, false);
+    case 'channel-parted': {
+      const partTarget = event.channel || event.target;
+      if (partTarget && event.networkId != null) {
+        const lower = String(partTarget).toLowerCase();
+        const existing = buffers
+          .forNetwork(event.networkId)
+          .find((b) => b.target.toLowerCase() === lower);
+        if (existing) {
+          buffers.setJoined(event.networkId, existing.target, false);
+        }
       }
       break;
+    }
     case 'typing':
       if (event.target && event.nick) {
         buffers.setTyping(
@@ -668,6 +683,20 @@ function handleIrcEvent(event: any): void {
         /* ignore */
       }
     }
+  }
+}
+
+function maybeClearStaleNamesAsk(nid: number | string | null, target: string): void {
+  if (nid == null || !isChannelTarget(target)) return;
+  const numNid = Number(nid);
+  if (!Number.isFinite(numNid)) return;
+  const lower = target.toLowerCase();
+  const buf = useBuffersStore
+    .getState()
+    .forNetwork(numNid)
+    .find((b) => b.target.toLowerCase() === lower);
+  if (buf && buf.joined && !buf.unseeded && buf.membersKnown !== 'full') {
+    clearNamesAskedForChannel(numNid, buf.target);
   }
 }
 
@@ -755,6 +784,7 @@ function handleMessage(raw: string): void {
         clearedAt: payload.clearedAt,
       });
     }
+    maybeClearStaleNamesAsk(nid, target);
     maybeInspectServerBuffer(nid, target, events, payload);
     primeEventPreviews(events, nid, target);
     return;
@@ -775,6 +805,7 @@ function handleMessage(raw: string): void {
       buffers.applyAroundSlice(nid, target, payload);
     } else if (payload.mode === 'latest') {
       buffers.applyLatestReplace(nid, target, payload);
+      maybeClearStaleNamesAsk(nid, target);
     } else if (payload.direction === 'newer' || payload.mode === 'after') {
       buffers.appendHistory(nid, target, events, !!payload.hasMoreNewer);
     } else {

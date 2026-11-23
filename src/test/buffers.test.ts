@@ -4,7 +4,13 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import React, { act } from 'react';
 import { createRoot } from 'react-dom/client';
-import { useBuffersStore, bufferKey, resetNamesAsked } from '../stores/buffers';
+import {
+  useBuffersStore,
+  bufferKey,
+  resetNamesAsked,
+  clearNamesAskedForChannel,
+  clearNamesAskedForNetwork,
+} from '../stores/buffers';
 import { useNetworksStore } from '../stores/networks';
 import { registerSocketSenders } from '../services/socketBus';
 import { MessageList } from '../components/MessageList';
@@ -112,5 +118,72 @@ describe('useBuffersStore', () => {
     expect(container.textContent).not.toContain('undefined is now known as');
     act(() => root.unmount());
     container.remove();
+  });
+
+  it('honors provisional membersPending semantics, waits for connected network, and avoids duplicate names on unseeded activate', () => {
+    const sent: Record<string, unknown>[] = [];
+    registerSocketSenders(
+      (payload) => {
+        sent.push(payload);
+        return true;
+      },
+      async () => ({ ok: true }),
+    );
+
+    useNetworksStore.setState({
+      states: {
+        1: { networkId: 1, channels: ['#lobby'], state: 'connecting', nick: 'Jawsh' },
+      },
+    });
+    useBuffersStore.getState().ensure(1, '#lobby', 7);
+    useBuffersStore.getState().setJoined(1, '#lobby', true);
+
+    // Must NOT send `names` or poison namesAsked while IRC network is still connecting
+    expect(useBuffersStore.getState().ensureMembers(1, '#lobby')).toBe(false);
+    expect(sent).toHaveLength(0);
+
+    // Flipping network to connected allows ensureMembers immediately
+    useNetworksStore.getState().applyState({ networkId: 1, state: 'connected' });
+    expect(useBuffersStore.getState().ensureMembers(1, '#lobby')).toBe(true);
+    expect(sent).toHaveLength(1);
+
+    // Provisional 1-member list sets 'partial' and ignores empty provisional frames
+    useBuffersStore.getState().setMembers(1, '#lobby', [{ nick: 'Jawsh', modes: [], away: false }], {
+      provisional: true,
+    });
+    expect(useBuffersStore.getState().buffers[bufferKey(1, '#lobby')].membersKnown).toBe('partial');
+
+    useBuffersStore.getState().setMembers(1, '#lobby', [], { provisional: true });
+    expect(useBuffersStore.getState().buffers[bufferKey(1, '#lobby')].members).toHaveLength(1);
+    expect(useBuffersStore.getState().buffers[bufferKey(1, '#lobby')].membersKnown).toBe('partial');
+
+    // clearNamesAskedForChannel / clearNamesAskedForNetwork clear dedupe locks cleanly
+    clearNamesAskedForChannel(1, '#LOBBY');
+    expect(useBuffersStore.getState().ensureMembers(1, '#lobby')).toBe(true);
+    expect(sent).toHaveLength(2);
+    clearNamesAskedForNetwork(1);
+    expect(useBuffersStore.getState().ensureMembers(1, '#lobby')).toBe(true);
+    expect(sent).toHaveLength(3);
+
+    // Full list marks membersKnown='full' and is never overwritten by provisional frames
+    useBuffersStore.getState().setMembers(1, '#lobby', [
+      { nick: 'Jawsh', modes: ['o'], away: false },
+      { nick: 'alice', modes: [], away: false },
+    ]);
+    useBuffersStore.getState().setMembers(1, '#lobby', [{ nick: 'Jawsh', modes: [], away: false }], {
+      provisional: true,
+    });
+    expect(useBuffersStore.getState().buffers[bufferKey(1, '#lobby')].membersKnown).toBe('full');
+    expect(useBuffersStore.getState().buffers[bufferKey(1, '#lobby')].members).toHaveLength(2);
+
+    // Activating an unseeded channel triggers reattachToLive (which returns names) without a redundant names verb
+    sent.length = 0;
+    useBuffersStore.getState().replaceBacklog(1, '#unseeded', [], undefined, null, true, {
+      reset: true,
+      hasMoreOlder: true,
+      bufferId: 9,
+    });
+    useBuffersStore.getState().activate(1, '#unseeded');
+    expect(sent.map((p) => p.type)).toEqual(['history']);
   });
 });

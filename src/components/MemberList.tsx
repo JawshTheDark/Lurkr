@@ -19,6 +19,7 @@ import { useRelayBotsStore } from '../stores/relayBots';
 import { useDccStore } from '../stores/dcc';
 import { useConfigStore } from '../stores/config';
 import { socketSend } from '../services/socketBus';
+import { useSocketConnected } from '../services/socket';
 import { resolveThemedNickColor } from '../lib/nickTheme';
 import { buildIgnoreSubmenuItem } from '../lib/ignoreMenu';
 import { prefixOf } from '../utils/memberPrefix';
@@ -44,13 +45,58 @@ export const MemberList: React.FC<MemberListProps> = ({ networkId, target }) => 
     return undefined;
   });
 
-  useEffect(() => {
-    if (buf?.kind === 'channel' && buf.joined && buf.membersKnown !== 'full') {
-      useBuffersStore.getState().ensureMembers(networkId, buf.target);
-    }
-  }, [networkId, buf?.target, buf?.kind, buf?.joined, buf?.membersKnown]);
+  const wsConnected = useSocketConnected();
   const prefixModes = useNetworksStore((s) => s.prefixFor(networkId));
   const netState = useNetworksStore((s) => s.states[networkId]);
+  const isNetConnected = !netState || netState.state === 'connected';
+
+  useEffect(() => {
+    if (
+      !buf ||
+      buf.kind !== 'channel' ||
+      !buf.joined ||
+      buf.membersKnown === 'full' ||
+      buf.loadingHistory ||
+      buf.unseeded ||
+      buf.detached ||
+      !isNetConnected
+    ) {
+      return;
+    }
+    const targetName = buf.target;
+    useBuffersStore.getState().ensureMembers(networkId, targetName);
+    // Recover if a `names` request raced with a large IRCd restore or dropped
+    const timer = setTimeout(() => {
+      const latest = useBuffersStore
+        .getState()
+        .forNetwork(networkId)
+        .find((b) => b.target.toLowerCase() === targetName.toLowerCase());
+      const latestNet = useNetworksStore.getState().states[networkId];
+      if (
+        latest?.kind === 'channel' &&
+        latest.joined &&
+        latest.membersKnown !== 'full' &&
+        !latest.loadingHistory &&
+        !latest.unseeded &&
+        !latest.detached &&
+        (!latestNet || latestNet.state === 'connected')
+      ) {
+        useBuffersStore.getState().ensureMembers(networkId, latest.target);
+      }
+    }, 8500);
+    return () => clearTimeout(timer);
+  }, [
+    networkId,
+    buf?.target,
+    buf?.kind,
+    buf?.joined,
+    buf?.membersKnown,
+    buf?.loadingHistory,
+    buf?.unseeded,
+    buf?.detached,
+    isNetConnected,
+    wsConnected,
+  ]);
   const profile = useNetworksStore((s) => s.profiles[networkId]);
   const network = useNetworksStore((s) => s.networkById(networkId));
   const ownNick = netState?.nick || network?.nick || '';
@@ -381,11 +427,15 @@ export const MemberList: React.FC<MemberListProps> = ({ networkId, target }) => 
         }}
       >
         <div style={{ fontSize: '0.8em', color: 'var(--fg-muted)', fontWeight: 600 }}>
-          {buf.membersKnown === 'none'
+          {buf.membersKnown === 'none' && buf.joined && isNetConnected
             ? 'Loading members…'
-            : hasFilterQuery
-              ? `${sortedMembers.length} of ${visibleCount} ${visibleCount === 1 ? 'member' : 'members'}`
-              : `${sortedMembers.length} ${sortedMembers.length === 1 ? 'member' : 'members'}`}
+            : buf.membersKnown === 'partial'
+              ? hasFilterQuery
+                ? `${sortedMembers.length} of ${visibleCount}+ members (loading…)`
+                : `${sortedMembers.length}+ members (loading…)`
+              : hasFilterQuery
+                ? `${sortedMembers.length} of ${visibleCount} ${visibleCount === 1 ? 'member' : 'members'}`
+                : `${sortedMembers.length} ${sortedMembers.length === 1 ? 'member' : 'members'}`}
         </div>
         <div
           className="member-filter-box"
