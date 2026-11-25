@@ -5,8 +5,8 @@ import React, { useEffect, useState } from 'react';
 import { Search, Loader2 } from 'lucide-react';
 import { AppModal } from './AppModal';
 import { useSearchStore } from '../stores/search';
-import { useBuffersStore } from '../stores/buffers';
 import { useRelayBotsStore } from '../stores/relayBots';
+import { jumpToMessage } from '../lib/jumpToMessage';
 import { formatTime } from '../utils/timestamp';
 
 export const SearchModal: React.FC = () => {
@@ -107,11 +107,15 @@ export const SearchModal: React.FC = () => {
               <button
                 key={hit.id}
                 type="button"
-                onClick={() => {
-                  useBuffersStore.getState().activate(hit.networkId, hit.target);
-                  useSearchStore.getState().closeSearch();
-                }}
-                className="w-full rounded-lg border border-[var(--border)] bg-[var(--bg-primary)] px-3 py-2 text-left hover:border-[var(--accent)]"
+                onClick={() =>
+                  jumpToMessage({
+                    networkId: hit.networkId,
+                    target: hit.target,
+                    messageId: Number(hit.id),
+                    onAfterActivate: () => useSearchStore.getState().closeSearch(),
+                  })
+                }
+                className="w-full rounded-lg border border-[var(--border)] bg-[var(--bg-primary)] px-3 py-2 text-left hover:border-[var(--accent)] cursor-pointer transition-colors"
               >
                 <div className="flex items-center justify-between gap-2 text-xs mb-0.5">
                   <span className="font-semibold text-[var(--text-primary)]">

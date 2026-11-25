@@ -5,8 +5,8 @@ import React, { useEffect } from 'react';
 import { Bell, Loader2 } from 'lucide-react';
 import { AppModal } from './AppModal';
 import { useHighlightsStore } from '../stores/highlights';
-import { useBuffersStore } from '../stores/buffers';
 import { useRelayBotsStore } from '../stores/relayBots';
+import { jumpToMessage } from '../lib/jumpToMessage';
 import { formatTime } from '../utils/timestamp';
 
 interface HighlightsModalProps {
@@ -55,13 +55,17 @@ export const HighlightsModal: React.FC<HighlightsModalProps> = ({ open, onClose 
           const displayText = relayed ? relayed.text : item.text;
           return (
             <button
-              key={item.id}
+              key={`${item.kind || 'h'}-${item.id}`}
               type="button"
-              onClick={() => {
-                useBuffersStore.getState().activate(item.networkId, item.target);
-                onClose();
-              }}
-              className="w-full rounded-lg border border-[var(--border)] bg-[var(--bg-primary)] px-3 py-2 text-left hover:border-[var(--accent)]"
+              onClick={() =>
+                jumpToMessage({
+                  networkId: item.networkId,
+                  target: item.target,
+                  messageId: Number((item as any).messageId ?? item.id),
+                  onAfterActivate: onClose,
+                })
+              }
+              className="w-full rounded-lg border border-[var(--border)] bg-[var(--bg-primary)] px-3 py-2 text-left hover:border-[var(--accent)] cursor-pointer transition-colors"
             >
               <div className="flex items-center justify-between gap-2 text-xs mb-0.5">
                 <span className="font-semibold text-[var(--text-primary)]">

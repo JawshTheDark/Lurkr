@@ -35,6 +35,8 @@ export interface ThreadView {
   truncated: boolean;
   token: number;
   sinceId: number;
+  focusId?: number | null;
+  focusNonce?: number;
 }
 
 export interface ThreadList {
@@ -67,7 +69,8 @@ interface ThreadsState {
   highlightedThreadsFor: (bufferId: number | null | undefined) => number;
   unreadFor: (bufferId: number, rootMsgid: string) => number;
   applyFollowed: (list: FollowedThread[]) => void;
-  open: (bufferId: number, rootMsgid: string) => void;
+  open: (bufferId: number, rootMsgid: string, focusId?: number | null) => void;
+  consumeFocus: (nonce: number) => void;
   close: () => void;
   applyThread: (frame: {
     bufferId: number;
@@ -109,7 +112,7 @@ export const useThreadsStore = create<ThreadsState>((set, get) => ({
 
   applyFollowed: (list) => set({ followed: Array.isArray(list) ? list : [] }),
 
-  open: (bufferId, rootMsgid) => {
+  open: (bufferId, rootMsgid, focusId = null) => {
     const buffers = Object.values(useBuffersStore.getState().buffers);
     const buf = buffers.find((b) => b.id === bufferId);
     if (!buf || buf.networkId == null) {
@@ -131,10 +134,17 @@ export const useThreadsStore = create<ThreadsState>((set, get) => ({
         truncated: same ? cur!.truncated : false,
         token,
         sinceId: same ? (cur!.replies.at(-1)?.id ?? 0) : 0,
+        focusId: focusId ?? null,
+        focusNonce: focusId != null ? nextToken++ : 0,
       },
     });
     socketSend({ type: 'thread', bufferId, rootMsgid, token });
   },
+
+  consumeFocus: (nonce) =>
+    set((s) =>
+      s.view && s.view.focusNonce === nonce ? { view: { ...s.view, focusId: null } } : s,
+    ),
 
   close: () => set({ view: null }),
 

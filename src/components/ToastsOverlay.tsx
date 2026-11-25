@@ -4,7 +4,7 @@
 import React from 'react';
 import { X } from 'lucide-react';
 import { useToastsStore } from '../stores/toasts';
-import { useBuffersStore } from '../stores/buffers';
+import { jumpToMessage } from '../lib/jumpToMessage';
 
 export const ToastsOverlay: React.FC = () => {
   const items = useToastsStore((s) => s.items);
@@ -42,8 +42,12 @@ export const ToastsOverlay: React.FC = () => {
             key={t.id}
             onClick={() => {
               if (t.networkId != null && t.target) {
-                useBuffersStore.getState().activate(t.networkId, t.target);
-                dismiss(t.id);
+                jumpToMessage({
+                  networkId: t.networkId,
+                  target: t.target,
+                  messageId: t.messageId ?? null,
+                  onAfterActivate: () => dismiss(t.id),
+                });
               }
             }}
             style={{

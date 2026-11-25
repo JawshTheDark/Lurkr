@@ -5,8 +5,8 @@ import React, { useEffect } from 'react';
 import { Bookmark, Trash2, Loader2 } from 'lucide-react';
 import { AppModal } from './AppModal';
 import { useBookmarksStore } from '../stores/bookmarks';
-import { useBuffersStore } from '../stores/buffers';
 import { useRelayBotsStore } from '../stores/relayBots';
+import { jumpToMessage } from '../lib/jumpToMessage';
 import { formatTime } from '../utils/timestamp';
 
 interface BookmarksModalProps {
@@ -57,11 +57,15 @@ export const BookmarksModal: React.FC<BookmarksModalProps> = ({ open, onClose })
             >
               <button
                 type="button"
-                onClick={() => {
-                  useBuffersStore.getState().activate(item.networkId, item.target);
-                  onClose();
-                }}
-                className="flex-1 text-left min-w-0"
+                onClick={() =>
+                  jumpToMessage({
+                    networkId: item.networkId,
+                    target: item.target,
+                    messageId: Number(item.messageId ?? item.id),
+                    onAfterActivate: onClose,
+                  })
+                }
+                className="flex-1 text-left min-w-0 cursor-pointer"
               >
                 <div className="flex items-center justify-between gap-2 text-xs mb-0.5">
                   <span className="font-semibold text-[var(--text-primary)]">

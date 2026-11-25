@@ -32,6 +32,12 @@ interface DesktopUiState {
   pasteImageNonce: number;
   pendingChatAction: { action: string; arg?: string; nonce: number } | null;
   pendingComposeInsert: { text: string; nonce: number } | null;
+  pendingMessageJump: {
+    networkId: number | null;
+    target: string;
+    messageId: number;
+    nonce: number;
+  } | null;
 
   openAbout: (tab?: AboutTab) => void;
   closeAbout: () => void;
@@ -48,6 +54,12 @@ interface DesktopUiState {
   consumeChatAction: (nonce: number) => void;
   insertIntoComposer: (text: string) => void;
   consumeComposeInsert: (nonce: number) => void;
+  requestMessageJump: (jump: {
+    networkId: number | null;
+    target: string;
+    messageId: number;
+  }) => number;
+  consumeMessageJump: (nonce: number) => void;
   reset: () => void;
 }
 
@@ -62,6 +74,7 @@ export const useDesktopUiStore = create<DesktopUiState>((set) => ({
   pasteImageNonce: 0,
   pendingChatAction: null,
   pendingComposeInsert: null,
+  pendingMessageJump: null,
 
   openAbout: (tab = 'program') => set({ aboutOpen: true, aboutTab: tab }),
   closeAbout: () => set({ aboutOpen: false }),
@@ -82,6 +95,13 @@ export const useDesktopUiStore = create<DesktopUiState>((set) => ({
   insertIntoComposer: (text) => set({ pendingComposeInsert: { text, nonce: nextNonce++ } }),
   consumeComposeInsert: (nonce) =>
     set((s) => (s.pendingComposeInsert?.nonce === nonce ? { pendingComposeInsert: null } : s)),
+  requestMessageJump: (jump) => {
+    const nonce = nextNonce++;
+    set({ pendingMessageJump: { ...jump, nonce } });
+    return nonce;
+  },
+  consumeMessageJump: (nonce) =>
+    set((s) => (s.pendingMessageJump?.nonce === nonce ? { pendingMessageJump: null } : s)),
   reset: () =>
     set({
       aboutOpen: false,
@@ -92,5 +112,6 @@ export const useDesktopUiStore = create<DesktopUiState>((set) => ({
       requestedSettingsSection: null,
       pendingChatAction: null,
       pendingComposeInsert: null,
+      pendingMessageJump: null,
     }),
 }));

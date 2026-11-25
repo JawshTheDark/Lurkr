@@ -778,3 +778,78 @@ textarea::placeholder {
     transform: translateY(-2px);
   }
 }
+
+/* Jump-to-message origin glow: holds brightly so the target is easy to spot after
+   scrolling, then smoothly fades back to the row's base style over ~3.2s. */
+.msg-row.msg-jump-glow {
+  border-left: 3px solid var(--accent);
+  animation: msg-jump-glow 3.2s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+.msg-row.msg-alt.msg-jump-glow {
+  animation-name: msg-jump-glow-alt;
+}
+
+.msg-row.msg-highlight.msg-jump-glow {
+  animation-name: msg-jump-glow-highlight;
+}
+
+@keyframes msg-jump-glow {
+  0%,
+  28% {
+    background: color-mix(in srgb, var(--accent) 26%, transparent);
+    box-shadow:
+      0 0 0 1px color-mix(in srgb, var(--accent) 75%, transparent),
+      0 0 18px color-mix(in srgb, var(--accent) 45%, transparent),
+      inset 0 0 10px color-mix(in srgb, var(--accent) 18%, transparent);
+    border-left-color: var(--accent);
+  }
+  100% {
+    background: transparent;
+    box-shadow:
+      0 0 0 0 transparent,
+      0 0 0 0 transparent,
+      inset 0 0 0 0 transparent;
+    border-left-color: transparent;
+  }
+}
+
+@keyframes msg-jump-glow-alt {
+  0%,
+  28% {
+    background: color-mix(in srgb, var(--accent) 26%, transparent);
+    box-shadow:
+      0 0 0 1px color-mix(in srgb, var(--accent) 75%, transparent),
+      0 0 18px color-mix(in srgb, var(--accent) 45%, transparent),
+      inset 0 0 10px color-mix(in srgb, var(--accent) 18%, transparent);
+    border-left-color: var(--accent);
+  }
+  100% {
+    background: var(--alt-bg);
+    box-shadow:
+      0 0 0 0 transparent,
+      0 0 0 0 transparent,
+      inset 0 0 0 0 transparent;
+    border-left-color: transparent;
+  }
+}
+
+@keyframes msg-jump-glow-highlight {
+  0%,
+  28% {
+    background: color-mix(in srgb, var(--accent) 28%, transparent);
+    box-shadow:
+      0 0 0 1px color-mix(in srgb, var(--accent) 80%, transparent),
+      0 0 18px color-mix(in srgb, var(--accent) 48%, transparent),
+      inset 0 0 10px color-mix(in srgb, var(--accent) 20%, transparent);
+    border-left-color: var(--accent);
+  }
+  100% {
+    background: color-mix(in srgb, var(--buffer-highlight) 12%, transparent);
+    box-shadow:
+      0 0 0 0 transparent,
+      0 0 0 0 transparent,
+      inset 0 0 0 0 transparent;
+    border-left-color: var(--buffer-highlight);
+  }
+}

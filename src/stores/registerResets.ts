@@ -3,6 +3,7 @@
 
 import { registerSessionReset } from './sessionReset';
 import { clearPreviewCache } from '../hooks/useLinkPreview';
+import { resetPendingJump } from '../lib/jumpToMessage';
 import { useAdminStore } from './admin';
 import { useAuthStore } from './auth';
 import { useAvatarSetsStore } from './avatarSets';
@@ -81,5 +82,6 @@ export function registerAllSessionResets(): void {
     useAliasesStore.getState().reset();
     useE2eChannelsStore.getState().reset();
     clearPreviewCache();
+    resetPendingJump();
   });
 }

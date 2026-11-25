@@ -12,7 +12,7 @@ import {
   Trash2,
   Upload,
 } from 'lucide-react';
-import { useBuffersStore, type Buffer, type BufferMessage } from '../stores/buffers';
+import { useBuffersStore, historyCountBy, type Buffer, type BufferMessage } from '../stores/buffers';
 import { useNetworksStore, tagSupport } from '../stores/networks';
 import { useSettingsStore } from '../stores/settings';
 import { useIgnoresStore } from '../stores/ignores';
@@ -30,6 +30,8 @@ import { socketSend } from '../services/socketBus';
 import { formatTimestamp, formatDate } from '../utils/timestamp';
 import { resolveThemedNickColor } from '../lib/nickTheme';
 import { buildIgnoreSubmenuItem } from '../lib/ignoreMenu';
+import { jumpToMessage } from '../lib/jumpToMessage';
+import { hiddenAsThreadReply } from '../lib/threadHide';
 import { replyExcerpt, stripReplyAddress } from '../utils/replyText';
 import { isChannelTarget } from '../shared/channels';
 import { currentLayoutValue } from '../shared/settingsRenames';
@@ -43,12 +45,22 @@ interface MessageListProps {
 }
 
 const NOISE_TYPES = new Set(['join', 'part', 'quit', 'nick', 'mode', 'chghost']);
+const JUMP_SCROLL_RETRY_FRAMES = 60;
+const JUMP_SCROLL_HOLD_MS = 1200;
+const JUMP_SCROLL_DRIFT_PX = 8;
+const JUMP_GLOW_DURATION_MS = 3200;
 
 export const MessageList: React.FC<MessageListProps> = ({ buffer, onOpenReactionPicker }) => {
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const atBottomRef = useRef(true);
+  const holdCancelRef = useRef<(() => void) | null>(null);
+  const glowTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const handledJumpNonceRef = useRef<number>(0);
   const [showJumpBottom, setShowJumpBottom] = useState(false);
   const [dragOver, setDragOver] = useState(false);
+  const [glowTarget, setGlowTarget] = useState<{ messageId: number; nonce: number } | null>(null);
+
+  const pendingJump = useDesktopUiStore((s) => s.pendingMessageJump);
 
   const settingsValues = useSettingsStore((s) => s.values);
   const reactionsByMsg = useReactionsStore((s) => s.byMessage);
@@ -131,13 +143,182 @@ export const MessageList: React.FC<MessageListProps> = ({ buffer, onOpenReaction
   const newestVisible = visibleMessages[visibleMessages.length - 1];
   const newestVisibleKey = newestVisible?.id ?? newestVisible;
 
+  const hasPendingJumpForBuffer =
+    !!pendingJump &&
+    pendingJump.networkId === buffer.networkId &&
+    pendingJump.target.toLowerCase() === buffer.target.toLowerCase();
+
+  useEffect(() => {
+    return () => {
+      holdCancelRef.current?.();
+      holdCancelRef.current = null;
+      if (glowTimerRef.current) {
+        clearTimeout(glowTimerRef.current);
+        glowTimerRef.current = null;
+      }
+    };
+  }, [buffer.networkId, buffer.target]);
+
+  useEffect(() => {
+    setGlowTarget(null);
+  }, [buffer.networkId, buffer.target]);
+
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
+    if (hasPendingJumpForBuffer) {
+      atBottomRef.current = false;
+      return;
+    }
     if (atBottomRef.current && !buffer.detached) {
       el.scrollTop = el.scrollHeight;
     }
-  }, [visibleMessages.length, newestVisibleKey, buffer.networkId, buffer.target, buffer.detached]);
+  }, [
+    visibleMessages.length,
+    newestVisibleKey,
+    buffer.networkId,
+    buffer.target,
+    buffer.detached,
+    hasPendingJumpForBuffer,
+  ]);
+
+  useEffect(() => {
+    if (!hasPendingJumpForBuffer || !pendingJump) return;
+    if (handledJumpNonceRef.current === pendingJump.nonce) return;
+
+    const targetId = pendingJump.messageId;
+    const jumpNonce = pendingJump.nonce;
+
+    holdCancelRef.current?.();
+    holdCancelRef.current = null;
+    if (glowTimerRef.current) {
+      clearTimeout(glowTimerRef.current);
+      glowTimerRef.current = null;
+    }
+    setGlowTarget(null);
+    atBottomRef.current = false;
+
+    let cancelled = false;
+    let attempts = 0;
+    let rafId = 0;
+
+    const centerElement = (scroller: HTMLElement, row: HTMLElement) => {
+      if (typeof row.scrollIntoView === 'function') {
+        row.scrollIntoView({ block: 'center', behavior: 'auto' });
+      }
+      const box = scroller.getBoundingClientRect();
+      const rect = row.getBoundingClientRect();
+      if (box.height > 0 && rect.height > 0) {
+        const drift = rect.top + rect.height / 2 - (box.top + box.height / 2);
+        if (Math.abs(drift) > JUMP_SCROLL_DRIFT_PX) {
+          scroller.scrollTop += drift;
+        }
+      }
+    };
+
+    const startHoldCentred = (scroller: HTMLElement, initialRow: HTMLElement): (() => void) => {
+      const until = performance.now() + JUMP_SCROLL_HOLD_MS;
+      let released = false;
+      let node: HTMLElement | null = initialRow;
+      let holdRaf = 0;
+      const release = () => {
+        released = true;
+      };
+      const RELEASE_ON = ['touchstart', 'wheel', 'pointerdown', 'keydown'] as const;
+      for (const evt of RELEASE_ON) {
+        (evt === 'keydown' ? window : scroller).addEventListener(evt, release, {
+          passive: true,
+          once: true,
+        });
+      }
+      const finish = () => {
+        if (holdRaf) cancelAnimationFrame(holdRaf);
+        holdRaf = 0;
+        for (const evt of RELEASE_ON) {
+          (evt === 'keydown' ? window : scroller).removeEventListener(evt, release);
+        }
+      };
+      const tick = () => {
+        if (released || !scroller.isConnected) return finish();
+        if (!node || !node.isConnected) {
+          node = scroller.querySelector(`[data-msg-id="${targetId}"]`) as HTMLElement | null;
+        }
+        if (node) {
+          const rect = node.getBoundingClientRect();
+          const box = scroller.getBoundingClientRect();
+          const drift = rect.top + rect.height / 2 - (box.top + box.height / 2);
+          if (box.height > 0 && Math.abs(drift) > JUMP_SCROLL_DRIFT_PX) {
+            const before = scroller.scrollTop;
+            centerElement(scroller, node);
+            if (scroller.scrollTop === before) return finish();
+          }
+        }
+        if (performance.now() < until) {
+          holdRaf = requestAnimationFrame(tick);
+        } else {
+          finish();
+        }
+      };
+      holdRaf = requestAnimationFrame(tick);
+      return finish;
+    };
+
+    const tryFindAndScroll = () => {
+      if (cancelled) return;
+      const scroller = scrollRef.current;
+      if (!scroller) return;
+      const row = scroller.querySelector(`[data-msg-id="${targetId}"]`) as HTMLElement | null;
+      if (row) {
+        handledJumpNonceRef.current = jumpNonce;
+        atBottomRef.current = false;
+        centerElement(scroller, row);
+        const distFromBottom = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight;
+        setShowJumpBottom(distFromBottom > 160 || buffer.detached);
+        setGlowTarget({ messageId: targetId, nonce: jumpNonce });
+        glowTimerRef.current = setTimeout(() => {
+          glowTimerRef.current = null;
+          setGlowTarget((cur) => (cur?.nonce === jumpNonce ? null : cur));
+        }, JUMP_GLOW_DURATION_MS);
+        holdCancelRef.current = startHoldCentred(scroller, row);
+        useDesktopUiStore.getState().consumeMessageJump(jumpNonce);
+        return;
+      }
+
+      const threadsHere = threadsEnabled && isChannelTarget(buffer.target);
+      const hiddenMsg = buffer.messages.find((x) => Number(x.id) === targetId);
+      if (hiddenMsg && hiddenAsThreadReply(hiddenMsg as any, threadsHere) && buffer.id != null) {
+        handledJumpNonceRef.current = jumpNonce;
+        useDesktopUiStore.getState().consumeMessageJump(jumpNonce);
+        useThreadsStore
+          .getState()
+          .open(buffer.id, String((hiddenMsg as any).replyTo.root), targetId);
+        return;
+      }
+
+      if (attempts++ < JUMP_SCROLL_RETRY_FRAMES) {
+        rafId = requestAnimationFrame(tryFindAndScroll);
+      } else {
+        handledJumpNonceRef.current = jumpNonce;
+        useDesktopUiStore.getState().consumeMessageJump(jumpNonce);
+      }
+    };
+
+    tryFindAndScroll();
+
+    return () => {
+      cancelled = true;
+      if (rafId) cancelAnimationFrame(rafId);
+    };
+  }, [
+    hasPendingJumpForBuffer,
+    pendingJump,
+    buffer.id,
+    buffer.target,
+    buffer.networkId,
+    buffer.messages,
+    buffer.detached,
+    threadsEnabled,
+  ]);
 
   const handleScroll = () => {
     const el = scrollRef.current;
@@ -150,12 +331,13 @@ export const MessageList: React.FC<MessageListProps> = ({ buffer, onOpenReaction
       useBuffersStore.getState().setLoadingHistory(buffer.networkId, buffer.target, true);
       socketSend({
         type: 'history',
-        mode: 'older',
+        mode: 'before',
         bufferId: buffer.id,
         networkId: buffer.networkId,
         target: buffer.target,
-        beforeId: buffer.oldestId,
+        before: buffer.oldestId,
         limit: 100,
+        countBy: historyCountBy(),
       });
     }
 
@@ -169,12 +351,13 @@ export const MessageList: React.FC<MessageListProps> = ({ buffer, onOpenReaction
       useBuffersStore.getState().setLoadingHistory(buffer.networkId, buffer.target, true);
       socketSend({
         type: 'history',
-        mode: 'newer',
+        mode: 'after',
         bufferId: buffer.id,
         networkId: buffer.networkId,
         target: buffer.target,
         afterId: buffer.newestId,
         limit: 100,
+        countBy: historyCountBy(),
       });
     }
   };
@@ -320,6 +503,7 @@ export const MessageList: React.FC<MessageListProps> = ({ buffer, onOpenReaction
           const threadStats = (m as any).thread;
           const isHighlight = !!(m as any).matched && !nohilightIds.has(m);
           const isAlt = idx % 2 === 1;
+          const isJumpGlow = glowTarget != null && m.id != null && Number(m.id) === glowTarget.messageId;
 
           return (
             <React.Fragment key={m.id ?? `local-${idx}`}>
@@ -341,17 +525,22 @@ export const MessageList: React.FC<MessageListProps> = ({ buffer, onOpenReaction
               )}
 
               <div
-                className={`msg-row ${isAlt ? 'msg-alt' : ''} ${isHighlight ? 'msg-highlight' : ''}`}
+                data-msg-id={m.id != null ? String(m.id) : undefined}
+                className={`msg-row ${isAlt ? 'msg-alt' : ''} ${isHighlight ? 'msg-highlight' : ''} ${isJumpGlow ? 'msg-jump-glow' : ''}`}
                 style={{
                   position: 'relative',
                   padding: isCompactLayout ? '2px 6px' : '6px 8px',
                   borderRadius: '4px',
-                  background: isHighlight
-                    ? 'color-mix(in srgb, var(--buffer-highlight) 12%, transparent)'
-                    : isAlt
-                      ? 'var(--alt-bg)'
-                      : 'transparent',
-                  borderLeft: isHighlight ? '3px solid var(--buffer-highlight)' : '3px solid transparent',
+                  ...(isJumpGlow
+                    ? {}
+                    : {
+                        background: isHighlight
+                          ? 'color-mix(in srgb, var(--buffer-highlight) 12%, transparent)'
+                          : isAlt
+                            ? 'var(--alt-bg)'
+                            : 'transparent',
+                        borderLeft: isHighlight ? '3px solid var(--buffer-highlight)' : '3px solid transparent',
+                      }),
                   lineHeight: isCompactLayout ? 'var(--compact-line-height, 1.4)' : '1.45',
                 }}
                 onMouseEnter={(e) => {
@@ -365,6 +554,33 @@ export const MessageList: React.FC<MessageListProps> = ({ buffer, onOpenReaction
               >
                 {replyTo?.parent && (
                   <div
+                    role={replyTo.parent.id != null ? 'button' : undefined}
+                    tabIndex={replyTo.parent.id != null ? 0 : undefined}
+                    title={replyTo.parent.id != null ? 'Jump to replied message' : undefined}
+                    onClick={
+                      replyTo.parent.id != null
+                        ? () =>
+                            jumpToMessage({
+                              networkId: buffer.networkId,
+                              target: buffer.target,
+                              messageId: Number(replyTo.parent.id),
+                            })
+                        : undefined
+                    }
+                    onKeyDown={
+                      replyTo.parent.id != null
+                        ? (e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault();
+                              jumpToMessage({
+                                networkId: buffer.networkId,
+                                target: buffer.target,
+                                messageId: Number(replyTo.parent.id),
+                              });
+                            }
+                          }
+                        : undefined
+                    }
                     style={{
                       fontSize: '0.8em',
                       color: 'var(--fg-muted)',
@@ -374,6 +590,7 @@ export const MessageList: React.FC<MessageListProps> = ({ buffer, onOpenReaction
                       whiteSpace: 'nowrap',
                       overflow: 'hidden',
                       textOverflow: 'ellipsis',
+                      cursor: replyTo.parent.id != null ? 'pointer' : 'default',
                     }}
                   >
                     ↩ <strong>{parentNick}</strong>: {parentText}

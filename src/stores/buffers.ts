@@ -9,6 +9,7 @@ import { seenEventCursor } from '../lib/seenEventCursor';
 import { SYSTEM_KEY } from '../lib/virtualBuffers';
 import { setUnreadDividerShown, unreadDividerShown } from '../lib/unreadDivider';
 import { historyCountBy } from '../lib/historyPaging';
+export { historyCountBy };
 import { isChannelTarget, isDccChatTarget } from '../shared/channels';
 
 const MAX_PER_BUFFER = 500;
@@ -165,6 +166,29 @@ export function newestHeldId(messages: BufferMessage[]): number {
   return 0;
 }
 
+/**
+ * Keep an around-anchor slice bounded to `max` rows while centering around the
+ * target message instead of dropping older context before it.
+ */
+export function windowAroundAnchor(
+  events: BufferMessage[],
+  anchorId: unknown,
+  max: number,
+): { events: BufferMessage[]; trimmedOlder: boolean; trimmedNewer: boolean } {
+  if (events.length <= max) return { events, trimmedOlder: false, trimmedNewer: false };
+  const idx = typeof anchorId === 'number' ? events.findIndex((e) => e.id === anchorId) : -1;
+  if (idx === -1) return { events: events.slice(-max), trimmedOlder: true, trimmedNewer: false };
+  const half = Math.floor(max / 2);
+  let start = Math.max(0, idx - half);
+  const end = Math.min(events.length, start + max);
+  start = Math.max(0, end - max);
+  return {
+    events: events.slice(start, end),
+    trimmedOlder: start > 0,
+    trimmedNewer: end < events.length,
+  };
+}
+
 function resolveExistingKey(
   buffers: Record<string, Buffer>,
   networkId: number | string | null,
@@ -275,6 +299,8 @@ function snapshotLiveTailId(buf: Buffer): number | null {
 interface BuffersStoreState {
   buffers: Record<string, Buffer>;
   byKey: (key: string) => Buffer | null;
+  hasBuffer: (networkId: number | string | null, target: string) => boolean;
+  findByTarget: (networkId: number | string | null, target: string) => Buffer | null;
   forNetwork: (networkId: number) => Buffer[];
   active: () => Buffer | null;
   ensure: (networkId: number | string | null, target: string, bufferId?: number | null) => Buffer;
@@ -306,9 +332,8 @@ interface BuffersStoreState {
     networkId: number | string | null,
     target: string,
     messageId: number,
-    before?: number,
-    after?: number,
-  ) => boolean;
+    limit?: number,
+  ) => number | null;
   applyAroundSlice: (networkId: number | string | null, target: string, payload: any) => void;
   reattachToLive: (networkId: number | string | null, target: string, limit?: number) => boolean;
   ensureHydrated: (networkId: number | string | null, target: string) => void;
@@ -375,7 +400,7 @@ interface BuffersStoreState {
   applyClearedState: (networkId: number | string | null, target: string, payload: any) => void;
   clearBuffer: (networkId: number | string | null, target: string) => void;
   unclearBuffer: (networkId: number | string | null, target: string) => void;
-  activate: (networkId: number | string | null, target: string) => void;
+  activate: (networkId: number | string | null, target: string, opts?: { skipHydrate?: boolean }) => void;
   setTyping: (
     networkId: number | string,
     target: string,
@@ -391,6 +416,14 @@ export const useBuffersStore = create<BuffersStoreState>((set, get) => ({
   buffers: {},
 
   byKey: (key) => get().buffers[key] || null,
+
+  hasBuffer: (networkId, target) =>
+    resolveExistingKey(get().buffers, networkId, target) !== null,
+
+  findByTarget: (networkId, target) => {
+    const key = resolveExistingKey(get().buffers, networkId, target);
+    return key ? get().buffers[key] : null;
+  },
 
   forNetwork: (networkId) => {
     const nid = Number(networkId);
@@ -592,10 +625,16 @@ export const useBuffersStore = create<BuffersStoreState>((set, get) => ({
     set((s) => ({ buffers: { ...s.buffers, [key]: buf } }));
   },
 
-  loadAround: (networkId, target, messageId, before = 60, after = 60) => {
+  loadAround: (networkId, target, messageId, limit = 100) => {
+    if (typeof target === 'string' && target.startsWith(':server:')) return null;
+    const anchorId = Number(messageId);
+    if (!Number.isInteger(anchorId) || anchorId <= 0) return null;
     const state = get();
     const { key, buf } = getOrCreateBuffer(state.buffers, networkId, target);
-    if (!buf.detached) {
+    const wasDetached = buf.detached;
+    const prevLiveTailId = buf.liveTailId;
+    const prevLiveDuringDetach = buf.liveDuringDetach;
+    if (!wasDetached) {
       buf.liveTailId = snapshotLiveTailId(buf);
       buf.detached = true;
       buf.liveDuringDetach = 0;
@@ -604,17 +643,38 @@ export const useBuffersStore = create<BuffersStoreState>((set, get) => ({
     buf.pendingHistoryToken = token;
     buf.loadingHistory = true;
     set((s) => ({ buffers: { ...s.buffers, [key]: buf } }));
-    return socketSend({
+    const sent = socketSend({
       type: 'history',
       mode: 'around',
       bufferId: buf.id,
       networkId: buf.networkId,
       target: buf.target,
-      aroundId: messageId,
-      before,
-      after,
+      anchorId,
+      limit,
+      countBy: historyCountBy(),
       token,
     });
+    if (!sent) {
+      set((s) => {
+        const cur = s.buffers[key];
+        if (!cur) return s;
+        return {
+          buffers: {
+            ...s.buffers,
+            [key]: {
+              ...cur,
+              detached: wasDetached,
+              liveTailId: prevLiveTailId,
+              liveDuringDetach: prevLiveDuringDetach,
+              pendingHistoryToken: null,
+              loadingHistory: false,
+            },
+          },
+        };
+      });
+      return null;
+    }
+    return token;
   },
 
   applyAroundSlice: (networkId, target, payload) => {
@@ -622,18 +682,24 @@ export const useBuffersStore = create<BuffersStoreState>((set, get) => ({
     const key = resolveExistingKey(state.buffers, networkId, target);
     if (!key) return;
     const buf = { ...state.buffers[key] };
-    if (payload.token != null && buf.pendingHistoryToken !== payload.token) return;
+    if (buf.pendingHistoryToken != null && payload.token !== buf.pendingHistoryToken) return;
     buf.pendingHistoryToken = null;
     buf.loadingHistory = false;
+    buf.pendingRefetch = false;
     const filtered = ((payload.events || []) as BufferMessage[]).filter(
       (e) => e.type !== 'away' && e.type !== 'back',
     );
-    buf.messages = filtered;
-    buf.oldestId = filtered[0]?.id ?? null;
-    buf.newestId = filtered[filtered.length - 1]?.id ?? null;
-    buf.hasMoreOlder = !!payload.hasMoreOlder;
-    buf.hasMoreNewer = !!payload.hasMoreNewer;
-    buf.detached = !!payload.hasMoreNewer;
+    const win = windowAroundAnchor(filtered, payload.anchorId ?? null, MAX_PER_BUFFER);
+    buf.messages = win.events;
+    buf.oldestId = win.events[0]?.id ?? null;
+    buf.newestId = win.events[win.events.length - 1]?.id ?? null;
+    buf.hasMoreOlder = win.trimmedOlder || !!payload.hasMoreOlder;
+    buf.hasMoreNewer = win.trimmedNewer || !!payload.hasMoreNewer;
+    const hiddenByClear =
+      buf.clearedBeforeId > 0 &&
+      typeof payload.anchorId === 'number' &&
+      payload.anchorId <= buf.clearedBeforeId;
+    buf.detached = buf.hasMoreNewer || hiddenByClear;
     if (!buf.detached) buf.liveDuringDetach = 0;
     buf.unseeded = false;
     set((s) => ({ buffers: { ...s.buffers, [key]: buf } }));
@@ -673,7 +739,12 @@ export const useBuffersStore = create<BuffersStoreState>((set, get) => ({
       const next = { ...s.buffers };
       for (const [k, b] of Object.entries(next)) {
         if (b.loadingHistory) {
-          next[k] = { ...b, loadingHistory: false, pendingRefetch: b.unseeded || b.detached };
+          next[k] = {
+            ...b,
+            loadingHistory: false,
+            pendingHistoryToken: null,
+            pendingRefetch: b.unseeded || b.detached,
+          };
           changed = true;
         }
       }
@@ -1094,7 +1165,7 @@ export const useBuffersStore = create<BuffersStoreState>((set, get) => ({
     });
   },
 
-  activate: (networkId, target) => {
+  activate: (networkId, target, opts) => {
     const state = get();
     const existingKey =
       networkId == null ? SYSTEM_KEY : resolveExistingKey(state.buffers, networkId, target);
@@ -1126,7 +1197,7 @@ export const useBuffersStore = create<BuffersStoreState>((set, get) => ({
     set((s) => ({ buffers: { ...s.buffers, [key]: buf } }));
     useNetworksStore.getState().setActive(buf.networkId, buf.target);
 
-    const needsHydration = buf.unseeded || buf.pendingRefetch;
+    const needsHydration = !opts?.skipHydrate && (buf.unseeded || buf.pendingRefetch);
     if (needsHydration) {
       get().reattachToLive(buf.networkId, buf.target);
     }

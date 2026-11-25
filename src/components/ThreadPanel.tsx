@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Brad Root
 // SPDX-License-Identifier: MPL-2.0
 
-import React from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { X, MessageSquare, ArrowLeft, Bell, BellOff, Loader2 } from 'lucide-react';
 import { useThreadsStore } from '../stores/threads';
 import { useBuffersStore } from '../stores/buffers';
@@ -27,6 +27,35 @@ export const ThreadPanel: React.FC<ThreadPanelProps> = ({ onOpenUploadsModal }) 
   const byNetworkIgnores = useIgnoresStore((s) => s.byNetwork);
   void globalIgnores;
   void byNetworkIgnores;
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const glowTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [glowTargetId, setGlowTargetId] = useState<number | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (glowTimerRef.current) clearTimeout(glowTimerRef.current);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!view || view.focusId == null || view.loading) return;
+    const targetId = view.focusId;
+    const focusNonce = view.focusNonce ?? 0;
+    const container = scrollRef.current;
+    if (!container) return;
+    const row = container.querySelector(`[data-msg-id="${targetId}"]`) as HTMLElement | null;
+    if (!row) return;
+    if (typeof row.scrollIntoView === 'function') {
+      row.scrollIntoView({ block: 'center', behavior: 'auto' });
+    }
+    if (glowTimerRef.current) clearTimeout(glowTimerRef.current);
+    setGlowTargetId(targetId);
+    glowTimerRef.current = setTimeout(() => {
+      glowTimerRef.current = null;
+      setGlowTargetId((cur) => (cur === targetId ? null : cur));
+    }, 3200);
+    useThreadsStore.getState().consumeFocus(focusNonce);
+  }, [view?.focusId, view?.focusNonce, view?.loading, view?.replies.length, view]);
 
   if (!view && !list) return null;
 
@@ -147,7 +176,7 @@ export const ThreadPanel: React.FC<ThreadPanelProps> = ({ onOpenUploadsModal }) 
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-3 space-y-3">
+      <div ref={scrollRef} className="flex-1 overflow-y-auto p-3 space-y-3">
         {view.loading && (
           <div className="flex items-center justify-center py-8 text-xs text-[var(--text-muted)] gap-2">
             <Loader2 className="w-4 h-4 animate-spin" /> Loading thread...
@@ -206,10 +235,12 @@ export const ThreadPanel: React.FC<ThreadPanelProps> = ({ onOpenUploadsModal }) 
                 isDm: !isChannelTarget(view.target),
               });
               const isHighlight = !!(msg as any).matched && !verdict.nohilight;
+              const isJumpGlow = glowTargetId != null && Number(msg.id) === glowTargetId;
               return (
               <div
                 key={msg.id}
-                className={`text-sm rounded px-1.5 py-0.5 ${isHighlight ? 'border-l-2 border-[var(--buffer-highlight)]' : ''}`}
+                data-msg-id={String(msg.id)}
+                className={`msg-row text-sm rounded px-1.5 py-0.5 ${isHighlight ? 'msg-highlight border-l-2 border-[var(--buffer-highlight)]' : ''} ${isJumpGlow ? 'msg-jump-glow' : ''}`}
               >
                 <div className="flex items-baseline gap-2">
                   <span
