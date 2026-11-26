@@ -148,7 +148,7 @@ const KNOWN_SERVICE_NICKS = new Set([
   'saslserv',
 ]);
 
-const DEFAULT_MODE_SPEC: ModeSpec = {
+export const DEFAULT_MODE_SPEC: ModeSpec = {
   list: DEFAULT_CHANMODES[0],
   always: DEFAULT_CHANMODES[1],
   onSet: DEFAULT_CHANMODES[2],
