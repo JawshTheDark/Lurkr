@@ -504,9 +504,15 @@ button:disabled {
 .btn-bar > button[aria-pressed='true'] {
   position: relative;
   z-index: var(--z-raised);
-  color: var(--fg);
+  color: var(--accent-fg, #090c0a);
   border-color: var(--accent);
-  background: var(--bg-soft);
+  background: var(--accent);
+  font-weight: 700;
+}
+.btn-bar > button[aria-pressed='true']:hover:not(:disabled) {
+  color: var(--accent-fg, #090c0a);
+  border-color: var(--fg);
+  filter: brightness(1.06);
 }
 
 /* Ignore rule Event type filter chips — unlayered so they win over the base
@@ -852,4 +858,204 @@ textarea::placeholder {
       inset 0 0 0 0 transparent;
     border-left-color: var(--buffer-highlight);
   }
+}
+
+/* Channel Settings modal (tabs, mode rows, list entries, coherent contrast) */
+.channel-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  border-bottom: 1px solid var(--border);
+  margin: -4px 0 var(--space-6);
+}
+
+button.channel-tab {
+  border: none;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  padding: var(--space-3) var(--space-6);
+  color: var(--fg-muted);
+  background: transparent;
+  font-size: 0.9em;
+  font-weight: 500;
+}
+
+button.channel-tab:hover:not(:disabled) {
+  border-color: transparent;
+  border-bottom-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  color: var(--fg);
+}
+
+button.channel-tab[aria-selected='true'] {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+  font-weight: 600;
+}
+
+.channel-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.channel-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.channel-section-label {
+  color: var(--fg-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.78em;
+  font-weight: 600;
+}
+
+.channel-divider {
+  height: 1px;
+  width: 100%;
+  border: 0;
+  margin: var(--space-6) 0;
+  background: var(--border);
+}
+
+.channel-modes {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.channel-modes.bare {
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: var(--space-3) var(--space-6);
+}
+
+.channel-mode-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  min-height: 2em;
+}
+
+.channel-mode-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex: 1;
+  min-width: 0;
+  cursor: pointer;
+}
+
+.channel-mode-toggle input[type='checkbox'] {
+  accent-color: var(--accent);
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  padding: 0;
+}
+
+.channel-mode-param {
+  width: 12em;
+  max-width: 45%;
+  background: var(--bg);
+}
+
+.channel-reveal-slot {
+  width: 1.75em;
+  display: flex;
+  justify-content: center;
+}
+
+.channel-mode-tag {
+  color: var(--fg-muted);
+  min-width: 2.5em;
+  text-align: right;
+  font-size: 0.85em;
+}
+
+.channel-other-modes {
+  margin-top: var(--space-2);
+}
+
+.channel-other-modes summary {
+  cursor: pointer;
+  color: var(--fg-muted);
+  padding: var(--space-2) 0;
+  user-select: none;
+}
+
+.channel-other-modes summary:hover {
+  color: var(--fg);
+}
+
+.channel-other-modes[open] summary {
+  margin-bottom: var(--space-3);
+}
+
+.channel-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-4);
+  color: var(--fg-muted);
+  font-size: 0.82em;
+}
+
+.channel-meta .over {
+  color: var(--bad);
+}
+
+.channel-meta span:last-child {
+  white-space: nowrap;
+}
+
+.channel-entries {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.channel-entry {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-3) 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.channel-entry-text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  flex: 1;
+  min-width: 0;
+}
+
+.channel-entry-mask {
+  align-self: flex-start;
+  word-break: break-all;
+  background: var(--bg);
+  padding: 1px var(--space-2);
+  border-radius: var(--radius-sm);
+}
+
+button.channel-icon-btn {
+  background: none;
+  border: none;
+  color: var(--fg-muted);
+  padding: 2px var(--space-2);
+  display: inline-flex;
+  align-items: center;
+}
+
+button.channel-icon-btn:hover:not(:disabled) {
+  border-color: transparent;
+  color: var(--accent);
 }

@@ -8,6 +8,7 @@ interface AppModalProps {
   open: boolean;
   onClose: () => void;
   title?: React.ReactNode;
+  subtitle?: React.ReactNode;
   width?: string;
   maxWidth?: string;
   children: React.ReactNode;
@@ -19,6 +20,7 @@ export const AppModal: React.FC<AppModalProps> = ({
   open,
   onClose,
   title,
+  subtitle,
   width = '520px',
   maxWidth,
   children,
@@ -86,7 +88,21 @@ export const AppModal: React.FC<AppModalProps> = ({
               gap: '12px',
             }}
           >
-            <div style={{ flex: 1, minWidth: 0 }}>{title}</div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div>{title}</div>
+              {subtitle && (
+                <div
+                  style={{
+                    fontSize: '0.8em',
+                    fontWeight: 400,
+                    color: 'var(--fg-muted)',
+                    marginTop: '2px',
+                  }}
+                >
+                  {subtitle}
+                </div>
+              )}
+            </div>
             <button
               type="button"
               onClick={onClose}

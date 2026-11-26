@@ -7,8 +7,15 @@ export interface AckResult {
   data?: unknown;
 }
 
+export interface SendWithAckOpts {
+  timeoutMs?: number;
+}
+
 type SendFn = (payload: Record<string, unknown>) => boolean;
-type SendWithAckFn = (payload: Record<string, unknown>) => Promise<AckResult>;
+type SendWithAckFn = (
+  payload: Record<string, unknown>,
+  opts?: SendWithAckOpts,
+) => Promise<AckResult>;
 
 let sendImpl: SendFn = () => false;
 let sendWithAckImpl: SendWithAckFn = async () => ({ ok: false, error: 'not connected' });
@@ -22,6 +29,9 @@ export function socketSend(payload: Record<string, unknown>): boolean {
   return sendImpl(payload);
 }
 
-export function socketSendWithAck(payload: Record<string, unknown>): Promise<AckResult> {
-  return sendWithAckImpl(payload);
+export function socketSendWithAck(
+  payload: Record<string, unknown>,
+  opts?: SendWithAckOpts,
+): Promise<AckResult> {
+  return sendWithAckImpl(payload, opts);
 }

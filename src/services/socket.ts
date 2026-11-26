@@ -3,7 +3,7 @@
 
 import { useSyncExternalStore } from 'react';
 import { resolveWsBaseUrl } from '../api';
-import { registerSocketSenders, type AckResult } from './socketBus';
+import { registerSocketSenders, type AckResult, type SendWithAckOpts } from './socketBus';
 import { WS_CLOSE_SESSION_REVOKED } from '../shared/wsCloseCodes';
 import { isChannelTarget } from '../shared/channels';
 import { seenEventCursor, setSeenEventCursor } from '../lib/seenEventCursor';
@@ -645,8 +645,10 @@ function handleIrcEvent(event: any): void {
       takeLive(event);
       break;
     case 'error':
-      if (event.target) takeLive(event);
-      else {
+      if (event.target) {
+        const res = takeLive(event);
+        isNews = res.news;
+      } else {
         toasts.push({
           title: 'Error',
           body: event.text || event.message || 'Server error',
@@ -1095,17 +1097,21 @@ export function send(payload: Record<string, unknown>): boolean {
   return true;
 }
 
-export function sendWithAck(payload: Record<string, unknown>): Promise<AckResult> {
+export function sendWithAck(
+  payload: Record<string, unknown>,
+  opts?: SendWithAckOpts,
+): Promise<AckResult> {
   if (!socket || socket.readyState !== WebSocket.OPEN) {
     return Promise.resolve({ ok: false, error: 'not connected' });
   }
   const clientId = makeClientId();
+  const timeoutMs = opts?.timeoutMs ?? ACK_TIMEOUT_MS;
   return new Promise((resolve) => {
     const timer = setTimeout(() => {
       if (pendingAcks.delete(clientId)) {
         resolve({ ok: false, error: 'request timed out' });
       }
-    }, ACK_TIMEOUT_MS);
+    }, timeoutMs);
     pendingAcks.set(clientId, (res) => {
       clearTimeout(timer);
       resolve(res);

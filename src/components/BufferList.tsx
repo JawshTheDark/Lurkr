@@ -42,6 +42,7 @@ interface BufferListProps {
   onOpenNetworkModal: (network?: Network) => void;
   onOpenJoinChannel: (networkId: number) => void;
   onOpenChannelList: (networkId: number) => void;
+  onOpenChannelSettings?: (networkId: number, target: string) => void;
   onOpenSearch: () => void;
   onOpenUploads: () => void;
   onOpenHighlights: () => void;
@@ -53,6 +54,7 @@ export const BufferList: React.FC<BufferListProps> = ({
   onOpenNetworkModal,
   onOpenJoinChannel,
   onOpenChannelList,
+  onOpenChannelSettings,
   onOpenSearch,
   onOpenUploads,
   onOpenHighlights,
@@ -209,6 +211,12 @@ export const BufferList: React.FC<BufferListProps> = ({
         items.push({
           label: 'Join Channel',
           onClick: () => useBuffersStore.getState().joinOrActivate(nid, buf.target),
+        });
+      }
+      if (onOpenChannelSettings) {
+        items.push({
+          label: 'Channel Settings…',
+          onClick: () => onOpenChannelSettings(nid, buf.target),
         });
       }
     }

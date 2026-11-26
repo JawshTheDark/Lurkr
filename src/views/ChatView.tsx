@@ -96,7 +96,10 @@ export const ChatView: React.FC = () => {
   });
   const [joinModalNetId, setJoinModalNetId] = useState<number | null>(null);
   const [chanlistNetId, setChanlistNetId] = useState<number | null>(null);
-  const [channelModalOpen, setChannelModalOpen] = useState(false);
+  const [channelModalTarget, setChannelModalTarget] = useState<{
+    networkId: number;
+    target: string;
+  } | null>(null);
   const [highlightsOpen, setHighlightsOpen] = useState(false);
   const [bookmarksOpen, setBookmarksOpen] = useState(false);
   const [ignoreOpen, setIgnoreOpen] = useState(false);
@@ -152,7 +155,10 @@ export const ChatView: React.FC = () => {
         break;
       case 'irc:channel-settings':
         if (activeBuffer && isChannelTarget(activeBuffer.target)) {
-          setChannelModalOpen(true);
+          setChannelModalTarget({
+            networkId: activeBuffer.networkId,
+            target: activeBuffer.target,
+          });
         }
         break;
       case 'composer:paste-image':
@@ -226,6 +232,9 @@ export const ChatView: React.FC = () => {
                 onOpenNetworkModal={(net) => setNetworkModal({ open: true, network: net || null })}
                 onOpenJoinChannel={(nid) => setJoinModalNetId(nid)}
                 onOpenChannelList={(nid) => setChanlistNetId(nid)}
+                onOpenChannelSettings={(nid, target) =>
+                  setChannelModalTarget({ networkId: nid, target })
+                }
                 onOpenSearch={() =>
                   useSearchStore.getState().openSearch({
                     networkId: activeBuffer?.networkId ?? null,
@@ -273,6 +282,10 @@ export const ChatView: React.FC = () => {
                 onOpenChannelList={(nid) => {
                   setMobileSidebarOpen(false);
                   setChanlistNetId(nid);
+                }}
+                onOpenChannelSettings={(nid, target) => {
+                  setMobileSidebarOpen(false);
+                  setChannelModalTarget({ networkId: nid, target });
                 }}
                 onOpenSearch={() => {
                   setMobileSidebarOpen(false);
@@ -386,7 +399,13 @@ export const ChatView: React.FC = () => {
                     <>
                       <button
                         type="button"
-                        onClick={() => setChannelModalOpen(true)}
+                        onClick={() =>
+                          activeBuffer &&
+                          setChannelModalTarget({
+                            networkId: activeBuffer.networkId,
+                            target: activeBuffer.target,
+                          })
+                        }
                         className="rounded-lg p-1.5 text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
                         title="Channel Settings"
                       >
@@ -576,10 +595,10 @@ export const ChatView: React.FC = () => {
       />
 
       <ChannelModal
-        open={channelModalOpen}
-        networkId={activeBuffer?.networkId ?? null}
-        target={activeBuffer?.target ?? ''}
-        onClose={() => setChannelModalOpen(false)}
+        open={channelModalTarget !== null}
+        networkId={channelModalTarget?.networkId ?? null}
+        target={channelModalTarget?.target ?? ''}
+        onClose={() => setChannelModalTarget(null)}
       />
 
       <SearchModal />
