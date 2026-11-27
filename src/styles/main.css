@@ -921,31 +921,184 @@ button.channel-tab[aria-selected='true'] {
   background: var(--border);
 }
 
+.channel-control-banner {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  margin-bottom: var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--bg) 72%, var(--bg-soft));
+}
+
+.channel-control-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.channel-info-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--bg-soft);
+  color: var(--fg-muted);
+  font-size: 0.76em;
+  font-weight: 500;
+}
+
+.channel-info-pill.software {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+  background: color-mix(in srgb, var(--accent) 12%, var(--bg));
+  font-weight: 600;
+}
+
+.channel-active-summary {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.channel-active-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+button.channel-active-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--fg);
+  font-size: 0.78em;
+  line-height: 1.3;
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease,
+    box-shadow 120ms ease,
+    transform 120ms ease;
+}
+
+button.channel-active-pill:hover,
+button.channel-active-pill.hovered,
+button.channel-active-pill:focus-visible {
+  background: color-mix(in srgb, var(--accent) 16%, var(--bg));
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 35%, transparent);
+  outline: none;
+}
+
+.channel-active-letter {
+  color: var(--accent);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-weight: 700;
+}
+
+.channel-active-name {
+  color: var(--fg);
+}
+
+.channel-active-val {
+  color: var(--fg-muted);
+  font-size: 0.92em;
+  background: var(--bg-soft);
+  padding: 0 4px;
+  border-radius: var(--radius-sm);
+}
+
+.channel-active-preview {
+  margin: 0;
+  padding: 5px 9px;
+  border-left: 2px solid var(--accent);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  background: color-mix(in srgb, var(--accent) 9%, var(--bg));
+  color: var(--fg);
+  font-size: 0.79em;
+  line-height: 1.4;
+}
+
+.channel-mode-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.channel-mode-group + .channel-mode-group {
+  margin-top: var(--space-3);
+}
+
+.channel-mode-group-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: 2px 4px;
+  color: var(--fg);
+  font-size: 0.8em;
+  font-weight: 600;
+}
+
+.channel-mode-group-count {
+  color: var(--fg-muted);
+  font-weight: 500;
+  font-size: 0.92em;
+}
+
 .channel-modes {
   list-style: none;
   margin: 0;
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
+  gap: 4px;
 }
 
 .channel-modes.bare {
   flex-direction: row;
   flex-wrap: wrap;
-  gap: var(--space-3) var(--space-6);
+  gap: var(--space-2);
 }
 
 .channel-mode-row {
   display: flex;
   align-items: center;
-  gap: var(--space-4);
-  min-height: 2em;
+  gap: var(--space-3);
+  min-height: 2.4em;
+  padding: 7px 10px;
+  border-radius: 6px;
+  border: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
+  background: color-mix(in srgb, var(--bg) 55%, transparent);
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease,
+    box-shadow 120ms ease;
+}
+
+.channel-mode-row[data-active='true'] {
+  background: color-mix(in srgb, var(--accent) 7%, var(--bg));
+  border-color: color-mix(in srgb, var(--accent) 28%, var(--border));
+}
+
+.channel-mode-row:hover,
+.channel-mode-row:focus-within {
+  background: color-mix(in srgb, var(--accent) 13%, var(--bg));
+  border-color: color-mix(in srgb, var(--accent) 48%, var(--border));
+  box-shadow: inset 3px 0 0 var(--accent);
 }
 
 .channel-mode-toggle {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: var(--space-3);
   flex: 1;
   min-width: 0;
@@ -956,13 +1109,70 @@ button.channel-tab[aria-selected='true'] {
   accent-color: var(--accent);
   width: 14px;
   height: 14px;
-  margin: 0;
+  margin: 3px 0 0;
   padding: 0;
+  flex-shrink: 0;
+}
+
+.channel-mode-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  flex: 1;
+}
+
+.channel-mode-title-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.channel-mode-name {
+  font-weight: 500;
+  color: var(--fg);
+  line-height: 1.3;
+}
+
+.channel-mode-desc {
+  color: var(--fg-muted);
+  font-size: 0.78em;
+  line-height: 1.35;
+  transition: color 120ms ease;
+}
+
+.channel-mode-row:hover .channel-mode-desc,
+.channel-mode-row:focus-within .channel-mode-desc {
+  color: var(--fg);
+}
+
+.channel-mode-scope {
+  font-size: 0.68em;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 1px 5px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  color: var(--fg-muted);
+  background: var(--bg-soft);
+  flex-shrink: 0;
+}
+
+.channel-mode-scope.scope-oper {
+  color: var(--warn);
+  border-color: color-mix(in srgb, var(--warn) 45%, var(--border));
+}
+
+.channel-mode-scope.scope-services {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
 }
 
 .channel-mode-param {
-  width: 12em;
-  max-width: 45%;
+  width: 12.5em;
+  max-width: 42%;
   background: var(--bg);
 }
 
@@ -970,13 +1180,79 @@ button.channel-tab[aria-selected='true'] {
   width: 1.75em;
   display: flex;
   justify-content: center;
+  flex-shrink: 0;
 }
 
 .channel-mode-tag {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 2.4em;
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--bg);
   color: var(--fg-muted);
-  min-width: 2.5em;
-  text-align: right;
-  font-size: 0.85em;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 0.8em;
+  font-weight: 600;
+  text-align: center;
+  flex-shrink: 0;
+  transition:
+    color 120ms ease,
+    border-color 120ms ease,
+    background-color 120ms ease;
+}
+
+.channel-mode-row[data-active='true'] .channel-mode-tag,
+.channel-mode-row:hover .channel-mode-tag,
+.channel-mode-row:focus-within .channel-mode-tag,
+.channel-flag-chip[data-active='true'] .channel-mode-tag,
+.channel-flag-chip:hover .channel-mode-tag {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
+  background: color-mix(in srgb, var(--accent) 12%, var(--bg));
+}
+
+.channel-flag-chip {
+  padding: 5px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease,
+    box-shadow 120ms ease;
+}
+
+.channel-flag-chip[data-active='true'] {
+  background: color-mix(in srgb, var(--accent) 8%, var(--bg));
+  border-color: color-mix(in srgb, var(--accent) 32%, var(--border));
+}
+
+.channel-flag-chip:hover,
+.channel-flag-chip:focus-within {
+  background: color-mix(in srgb, var(--accent) 13%, var(--bg));
+  border-color: color-mix(in srgb, var(--accent) 48%, var(--border));
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.channel-flag-chip .channel-mode-toggle {
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.channel-flag-chip .channel-mode-toggle input[type='checkbox'] {
+  margin-top: 0;
+}
+
+.channel-flag-desc {
+  color: var(--fg-muted);
+  font-size: 0.78em;
+}
+
+.channel-flag-chip:hover .channel-flag-desc {
+  color: var(--fg);
 }
 
 .channel-other-modes {
@@ -986,16 +1262,71 @@ button.channel-tab[aria-selected='true'] {
 .channel-other-modes summary {
   cursor: pointer;
   color: var(--fg-muted);
-  padding: var(--space-2) 0;
+  padding: var(--space-2) 4px;
+  border-radius: var(--radius-sm);
   user-select: none;
+  transition: color 120ms ease, background-color 120ms ease;
 }
 
 .channel-other-modes summary:hover {
   color: var(--fg);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
 }
 
 .channel-other-modes[open] summary {
-  margin-bottom: var(--space-3);
+  margin-bottom: var(--space-2);
+}
+
+.channel-list-banner {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--bg) 72%, var(--bg-soft));
+}
+
+.channel-list-banner-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.channel-extban-hints {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding-top: 2px;
+}
+
+button.channel-extban-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 7px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--fg-muted);
+  font-size: 0.75em;
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease,
+    color 120ms ease;
+}
+
+button.channel-extban-chip code {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+button.channel-extban-chip:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 14%, var(--bg));
+  border-color: var(--accent);
+  color: var(--fg);
 }
 
 .channel-meta {
@@ -1020,14 +1351,25 @@ button.channel-tab[aria-selected='true'] {
   padding: 0;
   display: flex;
   flex-direction: column;
+  gap: 2px;
 }
 
 .channel-entry {
   display: flex;
   align-items: center;
   gap: var(--space-4);
-  padding: var(--space-3) 0;
+  padding: var(--space-2) var(--space-3);
+  border-radius: 6px;
+  border: 1px solid transparent;
   border-bottom: 1px solid var(--border);
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease;
+}
+
+.channel-entry:hover {
+  background: color-mix(in srgb, var(--accent) 9%, var(--bg));
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--border));
 }
 
 .channel-entry-text {

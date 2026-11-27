@@ -13,6 +13,11 @@ import { useBuffersStore } from '../stores/buffers';
 import { useChannelNotifyStore } from '../stores/channelNotify';
 import { useIgnoresStore } from '../stores/ignores';
 import { useNetworksStore } from '../stores/networks';
+import {
+  createEmptyServerProfile,
+  type IrcdFamily,
+  type ServicesFamily,
+} from '../lib/networkCapabilities';
 import { parseModeSpec } from '../shared/channelModes';
 import { connectSocket, resetSocket } from '../services/socket';
 
@@ -116,7 +121,25 @@ describe('ChannelModal parity', () => {
     globalThis.fetch = origFetch;
   });
 
-  function seedChannel({ myModes = ['o'], modes = 'ntl' } = {}) {
+  function seedChannel({
+    myModes = ['o'],
+    modes = 'ntl',
+    modeParams = { l: '50' } as Record<string, string>,
+    chanmodes = ['eIbq', 'k', 'flj', 'CFLMPQRSTcgimnprstuz'],
+    prefix = [
+      { mode: 'o', symbol: '@' },
+      { mode: 'v', symbol: '+' },
+    ],
+    ircd = 'unknown' as IrcdFamily,
+    services = 'unknown' as ServicesFamily,
+    isupport = {} as Record<string, string | true>,
+  } = {}) {
+    const profile = {
+      ...createEmptyServerProfile(),
+      ircd,
+      services,
+      isupport,
+    };
     useNetworksStore.setState({
       networks: [
         {
@@ -136,16 +159,14 @@ describe('ChannelModal parity', () => {
           state: 'connected',
           nick: 'Jawsh',
           modeSpec: parseModeSpec({
-            CHANMODES: ['eIbq', 'k', 'flj', 'CFLMPQRSTcgimnprstuz'],
-            PREFIX: [
-              { mode: 'o', symbol: '@' },
-              { mode: 'v', symbol: '+' },
-            ],
+            CHANMODES: chanmodes,
+            PREFIX: prefix,
             MODES: '4',
             TOPICLEN: '390',
           }),
         },
       },
+      profiles: ircd === 'unknown' && services === 'unknown' ? {} : { 1: profile },
       loaded: true,
     });
     const buffers = useBuffersStore.getState();
@@ -159,7 +180,7 @@ describe('ChannelModal parity', () => {
       setBy: 'alice',
       setAt: '2026-09-23T10:00:00.000Z',
     });
-    buffers.setChannelModes(1, '#lurker', modes, { l: '50' }, '2026-05-17T10:00:00.000Z');
+    buffers.setChannelModes(1, '#lurker', modes, modeParams, '2026-05-17T10:00:00.000Z');
   }
 
   function findModeCheckbox(letter: string): HTMLInputElement | null {
@@ -192,7 +213,7 @@ describe('ChannelModal parity', () => {
     const otherDetails = container.querySelector('details.channel-other-modes');
     expect(otherDetails).toBeTruthy();
     expect(otherDetails!.hasAttribute('open')).toBe(false);
-    expect(otherDetails!.querySelector('summary')?.textContent).toContain('+Cg');
+    expect(otherDetails!.querySelector('summary')?.textContent).toContain('+g');
     expect(container.textContent).toContain('Set by alice');
     expect(container.textContent).toContain('Created');
     expect(container.textContent).toContain('5 / 390');
@@ -434,5 +455,142 @@ describe('ChannelModal parity', () => {
       channel: '#lurker',
       changes: [{ sign: '-', letter: 'b', param: '*!*@troll.invalid' }],
     });
+  });
+
+  it('shows Solanum descriptors, active pill hover previews, custom folding, and EXTBAN hints', async () => {
+    seedChannel({
+      myModes: ['o'],
+      modes: 'ntCfzX',
+      modeParams: { f: '#overflow' },
+      chanmodes: ['eIbq', 'k', 'flj', 'CFLMPQRSTcgimnprstuzX'],
+      ircd: 'solanum',
+      services: 'atheme',
+      isupport: { EXTBAN: '$,agjrxz', MAXLIST: 'beI:100' },
+    });
+
+    root = createRoot(container);
+    act(() => {
+      root!.render(<ChannelModal open networkId={1} target="#lurker" onClose={() => {}} />);
+    });
+
+    // Software banner + services + role + active pills
+    expect(container.textContent).toContain('Solanum');
+    expect(container.textContent).toContain('Services: Atheme');
+    expect(container.textContent).toContain('Role: Operator (@)');
+    expect(container.textContent).toContain('Solanum Modes');
+    expect(container.textContent).toContain('Channel forward');
+    expect(container.textContent).toContain('#overflow');
+    expect(container.textContent).toContain('Reduced moderation');
+    expect(container.textContent).toContain(
+      'Routes messages blocked by +m, +b, +q, or +R to channel ops instead.',
+    );
+
+    // Truly unrecognized server flag +X folds cleanly into details.channel-other-modes
+    const otherDetails = container.querySelector('details.channel-other-modes');
+    expect(otherDetails).toBeTruthy();
+    expect(otherDetails!.querySelector('summary')?.textContent).toContain('+X');
+
+    // Hovering +z active pill reveals the inline status preview
+    const zPill = Array.from(container.querySelectorAll('.channel-active-pill')).find((b) =>
+      b.textContent?.includes('+z'),
+    ) as HTMLButtonElement;
+    expect(zPill).toBeTruthy();
+    act(() => {
+      zPill.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+    });
+    expect(container.querySelector('.channel-active-preview')?.textContent).toContain(
+      '+z Reduced moderation',
+    );
+
+    // Switch to Bans tab -> Solanum EXTBAN hints + MAXLIST limit + click quick-insert
+    const bansTab = Array.from(container.querySelectorAll('[role="tab"]')).find(
+      (t) => t.textContent?.trim() === 'Bans',
+    ) as HTMLButtonElement;
+    act(() => {
+      bansTab.click();
+    });
+    expect(container.textContent).toContain('Max 100 entries');
+    const accountChip = Array.from(container.querySelectorAll('.channel-extban-chip')).find((b) =>
+      b.textContent?.includes('$a:'),
+    ) as HTMLButtonElement;
+    expect(accountChip).toBeTruthy();
+    act(() => {
+      accountChip.click();
+    });
+    const maskInput = container.querySelector(
+      'input[aria-label="Add to Bans"]',
+    ) as HTMLInputElement;
+    expect(maskInput.value).toBe('$a:');
+    expect(maskInput.placeholder).toContain('$a:account');
+  });
+
+  it('switches mode meanings per IRCd family across UnrealIRCd, InspIRCd, and Ergo', () => {
+    seedChannel({
+      myModes: ['q'],
+      modes: 'ntfzL',
+      modeParams: { f: '[5t]:3', L: '#overflow' },
+      chanmodes: ['beI', 'kFfL', 'ljH', 'CcDdGMNOPQRSTuVzZmr'],
+      prefix: [
+        { mode: 'q', symbol: '~' },
+        { mode: 'o', symbol: '@' },
+      ],
+      ircd: 'unrealircd',
+      services: 'anope',
+      isupport: { EXTBAN: '~' },
+    });
+
+    root = createRoot(container);
+    act(() => {
+      root!.render(<ChannelModal open networkId={1} target="#lurker" onClose={() => {}} />);
+    });
+
+    expect(container.textContent).toContain('UnrealIRCd');
+    expect(container.textContent).toContain('UnrealIRCd Modes');
+    expect(container.textContent).toContain('Role: Owner (~)');
+    expect(container.textContent).toContain('Flood protection');
+    expect(container.textContent).toContain('Flood profile');
+    expect(container.textContent).toContain('TLS connections only');
+    expect(container.textContent).toContain('Channel link');
+
+    // Re-seed as InspIRCd: +F becomes Nick flood, +B Block ALL CAPS, +J Kick rejoin cooldown
+    act(() => {
+      seedChannel({
+        myModes: ['o'],
+        modes: 'ntfFJ',
+        modeParams: { f: '5:3', F: '3:60', J: '30' },
+        chanmodes: ['beI', 'k', 'fFgjJLHdwX', 'ABCDGKMNOPQRSTuZzmr'],
+        ircd: 'inspircd',
+      });
+    });
+    expect(container.textContent).toContain('InspIRCd Modes');
+    expect(container.textContent).toContain('Message flood');
+    expect(container.textContent).toContain('Nick flood');
+    expect(container.textContent).toContain('Block ALL CAPS');
+    expect(container.textContent).toContain('Kick rejoin cooldown');
+
+    // Re-seed as Ergo: +U Op-moderated, +E Roleplay commands, +b mute hint `m:`
+    act(() => {
+      seedChannel({
+        myModes: ['o'],
+        modes: 'ntEU',
+        modeParams: {},
+        chanmodes: ['beI', 'k', 'fl', 'CEMRuU'],
+        ircd: 'ergo',
+        services: 'ergo',
+      });
+    });
+    expect(container.textContent).toContain('Ergo Modes');
+    expect(container.textContent).toContain('Services: Ergo Built-in');
+    expect(container.textContent).toContain('Roleplay commands');
+    expect(container.textContent).toContain('Op-moderated');
+
+    const bansTab = Array.from(container.querySelectorAll('[role="tab"]')).find(
+      (t) => t.textContent?.trim() === 'Bans',
+    ) as HTMLButtonElement;
+    act(() => {
+      bansTab.click();
+    });
+    expect(container.textContent).toContain('m:');
+    expect(container.textContent).toContain('Mute mask (speak/nick only)');
   });
 });

@@ -13,9 +13,22 @@ import { useIgnoresStore } from '../stores/ignores';
 import { onIrcEvent, onSocketOpen } from '../services/socket';
 import { socketSendWithAck } from '../services/socketBus';
 import { getChannelNotifyRung, setChannelNotifyRung, type ChannelNotifyRung } from '../lib/channelNotifyRung';
-import { DEFAULT_MODE_SPEC } from '../lib/networkCapabilities';
-import { DEFAULT_PREFIX, hasRankAtLeast, type OutgoingModeChange } from '../shared/channelModes';
 import {
+  buildCapabilityContext,
+  DEFAULT_MODE_SPEC,
+  formatServerSummary,
+  getAvailableServices,
+  type IrcdFamily,
+} from '../lib/networkCapabilities';
+import {
+  DEFAULT_PREFIX,
+  hasRankAtLeast,
+  type OutgoingModeChange,
+  type PrefixMode,
+} from '../shared/channelModes';
+import {
+  describeListMode,
+  describeModeMeta,
   LIST_NAMES,
   liveRow,
   modeChanges,
@@ -45,6 +58,36 @@ interface ListState {
 const LIST_ACK_TIMEOUT_MS = 35_000;
 const ERROR_WINDOW_MS = 10_000;
 const FORM_ID = 'channel-settings-form';
+
+const SOFTWARE_LABELS: Record<IrcdFamily, string> = {
+  solanum: 'Solanum',
+  charybdis: 'Charybdis',
+  unrealircd: 'UnrealIRCd',
+  inspircd: 'InspIRCd',
+  ergo: 'Ergo',
+  hybrid: 'Hybrid',
+  ngircd: 'ngIRCd',
+  ircu: 'ircu',
+  unknown: 'Extended',
+};
+
+const ROLE_LABELS: Record<string, string> = {
+  q: 'Owner',
+  a: 'Admin',
+  o: 'Operator',
+  h: 'Half-Op',
+  v: 'Voiced',
+};
+
+function describeSelfRole(selfModes: string[], prefix: readonly PrefixMode[]): string {
+  for (const p of prefix) {
+    if (selfModes.includes(p.mode)) {
+      const name = ROLE_LABELS[p.mode] ?? `+${p.mode}`;
+      return `${name} (${p.symbol})`;
+    }
+  }
+  return 'Member';
+}
 
 const NOTIFY_RUNGS: Array<{ id: ChannelNotifyRung; label: string; hint: string }> = [
   { id: 'all', label: 'All Messages', hint: 'Notify on every message in this channel.' },
@@ -99,6 +142,7 @@ export const ChannelModal: React.FC<ChannelModalProps> = ({
     networkId != null && target ? s.findByTarget(networkId, target) : null,
   );
   const netState = useNetworksStore((s) => (networkId != null ? s.states[networkId] : undefined));
+  const profile = useNetworksStore((s) => (networkId != null ? s.profiles[networkId] : undefined));
   const networks = useNetworksStore((s) => s.networks);
   const notifyByNet = useChannelNotifyStore((s) => s.byNetwork);
   const ignoresGlobal = useIgnoresStore((s) => s.global);
@@ -113,6 +157,8 @@ export const ChannelModal: React.FC<ChannelModalProps> = ({
   const [keyRevealed, setKeyRevealed] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState('');
+  const [hoveredActiveMode, setHoveredActiveMode] = useState<string | null>(null);
+  const maskInputRef = useRef<HTMLInputElement>(null);
   const [modeRowsSeen, setModeRowsSeen] = useState<ModeRowLike[]>([]);
   const [errorsSeen, setErrorsSeen] = useState<Array<{ text: string; at: number }>>([]);
   const [armed, setArmed] = useState<{ from: number; at: number; tab: string } | null>(null);
@@ -381,13 +427,75 @@ export const ChannelModal: React.FC<ChannelModalProps> = ({
     }));
   };
 
-  const rows = useMemo(() => (spec ? modeRows(spec) : []), [spec]);
+  const ircd: IrcdFamily = profile?.ircd ?? 'unknown';
+  const capCtx = useMemo(
+    () =>
+      buildCapabilityContext(netState, profile, {
+        target: canonicalTarget,
+        selfChannelModes: selfModes,
+        channelModes: buffer?.modes ?? '',
+      }),
+    [netState, profile, canonicalTarget, selfModes, buffer?.modes],
+  );
+  const serverSummary = useMemo(() => formatServerSummary(capCtx), [capCtx]);
+  const availableServices = useMemo(() => getAvailableServices(capCtx), [capCtx]);
+  const selfRoleLabel = useMemo(() => describeSelfRole(selfModes, prefix), [selfModes, prefix]);
+  const networkName = useMemo(
+    () => networks.find((n) => n.id === networkId)?.name ?? '',
+    [networks, networkId],
+  );
+
+  const activeModeItems = useMemo(() => {
+    const raw = (buffer?.modes ?? '').replace(/^[+-]+/, '');
+    const seen = new Set<string>();
+    const items: Array<{ letter: string; name: string; description: string; value?: string }> = [];
+    for (const letter of raw) {
+      if (!letter || seen.has(letter)) continue;
+      seen.add(letter);
+      const meta = describeModeMeta(letter, ircd);
+      const value =
+        letter === 'k'
+          ? storedKey || (buffer?.modeParams?.k && buffer.modeParams.k !== '*')
+            ? 'key set'
+            : undefined
+          : buffer?.modeParams?.[letter];
+      items.push({
+        letter,
+        name: meta.name ?? `Mode +${letter}`,
+        description: meta.description,
+        value,
+      });
+    }
+    return items;
+  }, [buffer?.modes, buffer?.modeParams, ircd, storedKey]);
+
+  const hoveredActiveItem = useMemo(
+    () => activeModeItems.find((item) => item.letter === hoveredActiveMode) ?? null,
+    [activeModeItems, hoveredActiveMode],
+  );
+
+  const activeListMeta = useMemo(
+    () => describeListMode(activeTab, ircd, profile?.isupport),
+    [activeTab, ircd, profile?.isupport],
+  );
+
+  const rows = useMemo(() => (spec ? modeRows(spec, ircd) : []), [spec, ircd]);
   const visibleRows = useMemo(
     () => (canEditModes ? rows : rows.filter((r) => shown(r.letter).on)),
     [canEditModes, rows, shown],
   );
-  const namedRows = useMemo(() => visibleRows.filter((r) => r.name), [visibleRows]);
-  const otherRows = useMemo(() => visibleRows.filter((r) => !r.name), [visibleRows]);
+  const coreRows = useMemo(
+    () => visibleRows.filter((r) => r.category === 'core'),
+    [visibleRows],
+  );
+  const extendedRows = useMemo(
+    () => visibleRows.filter((r) => r.category === 'extended'),
+    [visibleRows],
+  );
+  const otherRows = useMemo(
+    () => visibleRows.filter((r) => r.category === 'unknown'),
+    [visibleRows],
+  );
   const otherParams = useMemo(() => otherRows.filter((r) => r.kind !== 'flag'), [otherRows]);
   const otherFlags = useMemo(() => otherRows.filter((r) => r.kind === 'flag'), [otherRows]);
   const otherSetLetters = useMemo(
@@ -556,15 +664,123 @@ export const ChannelModal: React.FC<ChannelModalProps> = ({
       </>
     );
 
+  const renderModeRows = (list: ModeRow[]) => (
+    <ul className="channel-modes">
+      {list.map((row: ModeRow) => {
+        const rowState = shown(row.letter);
+        return (
+          <li
+            key={row.letter}
+            className="channel-mode-row"
+            data-active={rowState.on ? 'true' : 'false'}
+          >
+            <ChannelModeRow
+              row={row}
+              state={rowState}
+              disabled={!canEditModes}
+              revealed={keyRevealed}
+              canReveal={!!storedKey && live.modes.includes('k')}
+              onToggle={(on) => setOn(row.letter, on)}
+              onValue={(val) => setValue(row.letter, val)}
+              onReveal={() => setKeyRevealed((v) => !v)}
+            />
+          </li>
+        );
+      })}
+    </ul>
+  );
+
+  const softwareHeading =
+    ircd === 'unknown' ? 'Extended Modes' : `${SOFTWARE_LABELS[ircd]} Modes`;
+  const hasKnownServices = serverSummary.servicesLabel !== 'Services Unknown';
+
   return (
     <AppModal
       open={open}
       onClose={onClose}
       title={canonicalTarget}
-      subtitle={createdLabel}
-      width="580px"
+      subtitle={[networkName, createdLabel].filter(Boolean).join(' · ') || undefined}
+      width="640px"
       footer={footer}
     >
+      <div className="channel-control-banner" aria-label="Network and channel context">
+        <div className="channel-control-chips">
+          <span
+            className="channel-info-pill software"
+            title={`Detected server software: ${serverSummary.softwareLabel}`}
+          >
+            {serverSummary.softwareLabel}
+          </span>
+          {hasKnownServices && (
+            <span
+              className="channel-info-pill"
+              title={`Detected services: ${serverSummary.servicesLabel}`}
+            >
+              Services: {serverSummary.servicesLabel}
+            </span>
+          )}
+          {!hasKnownServices && availableServices.includes('ChanServ') && (
+            <span className="channel-info-pill" title="ChanServ observed on this network">
+              ChanServ
+            </span>
+          )}
+          {joined && (
+            <span className="channel-info-pill" title="Your permission level in this channel">
+              Role: {selfRoleLabel}
+            </span>
+          )}
+          {joined && buffer && buffer.members.length > 0 && (
+            <span className="channel-info-pill">
+              {buffer.members.length} {buffer.members.length === 1 ? 'member' : 'members'}
+            </span>
+          )}
+        </div>
+
+        {joined && (
+          <div className="channel-active-summary">
+            {activeModeItems.length > 0 ? (
+              <>
+                <div className="channel-active-pills" role="list" aria-label="Active channel modes">
+                  {activeModeItems.map((item) => (
+                    <button
+                      key={item.letter}
+                      type="button"
+                      role="listitem"
+                      className={`channel-active-pill${
+                        hoveredActiveMode === item.letter ? ' hovered' : ''
+                      }`}
+                      title={`+${item.letter} ${item.name}: ${item.description}`}
+                      onMouseEnter={() => setHoveredActiveMode(item.letter)}
+                      onMouseLeave={() =>
+                        setHoveredActiveMode((cur) => (cur === item.letter ? null : cur))
+                      }
+                      onFocus={() => setHoveredActiveMode(item.letter)}
+                      onBlur={() =>
+                        setHoveredActiveMode((cur) => (cur === item.letter ? null : cur))
+                      }
+                    >
+                      <span className="channel-active-letter">+{item.letter}</span>
+                      <span className="channel-active-name">{item.name}</span>
+                      {item.value && <code className="channel-active-val">{item.value}</code>}
+                    </button>
+                  ))}
+                </div>
+                {hoveredActiveItem && (
+                  <p className="channel-active-preview" role="status">
+                    <strong>
+                      +{hoveredActiveItem.letter} {hoveredActiveItem.name}
+                    </strong>
+                    <span> — {hoveredActiveItem.description}</span>
+                  </p>
+                )}
+              </>
+            ) : (
+              <p className="m-0 text-xs text-[var(--fg-muted)]">No channel modes currently set.</p>
+            )}
+          </div>
+        )}
+      </div>
+
       <div className="channel-tabs" role="tablist" aria-label="Channel settings">
         {tabs.map((tab) => (
           <button
@@ -616,7 +832,16 @@ export const ChannelModal: React.FC<ChannelModalProps> = ({
 
           {/* Modes */}
           <section className="channel-section">
-            <span className="channel-section-label">Modes</span>
+            <div className="channel-section-header">
+              <span className="channel-section-label">Modes</span>
+              {spec && (
+                <span className="text-[11px] text-[var(--fg-muted)]">
+                  {ircd === 'unknown'
+                    ? 'Generic IRCd rules'
+                    : `${SOFTWARE_LABELS[ircd]} mode semantics`}
+                </span>
+              )}
+            </div>
             {!spec ? (
               <p className="m-0 text-xs text-[var(--fg-muted)]">
                 Modes show once the network is connected.
@@ -635,23 +860,28 @@ export const ChannelModal: React.FC<ChannelModalProps> = ({
                 {!canEditModes && visibleRows.length === 0 && (
                   <p className="m-0 text-xs text-[var(--fg-muted)]">No modes set.</p>
                 )}
-                {namedRows.length > 0 && (
-                  <ul className="channel-modes">
-                    {namedRows.map((row: ModeRow) => (
-                      <li key={row.letter} className="channel-mode-row">
-                        <ChannelModeRow
-                          row={row}
-                          state={shown(row.letter)}
-                          disabled={!canEditModes}
-                          revealed={keyRevealed}
-                          canReveal={!!storedKey && live.modes.includes('k')}
-                          onToggle={(on) => setOn(row.letter, on)}
-                          onValue={(val) => setValue(row.letter, val)}
-                          onReveal={() => setKeyRevealed((v) => !v)}
-                        />
-                      </li>
-                    ))}
-                  </ul>
+                {coreRows.length > 0 && (
+                  <div className="channel-mode-group">
+                    <div className="channel-mode-group-header">
+                      <span>Core Modes</span>
+                      <span className="channel-mode-group-count">
+                        {coreRows.filter((r) => shown(r.letter).on).length} / {coreRows.length} active
+                      </span>
+                    </div>
+                    {renderModeRows(coreRows)}
+                  </div>
+                )}
+                {extendedRows.length > 0 && (
+                  <div className="channel-mode-group">
+                    <div className="channel-mode-group-header">
+                      <span>{softwareHeading}</span>
+                      <span className="channel-mode-group-count">
+                        {extendedRows.filter((r) => shown(r.letter).on).length} /{' '}
+                        {extendedRows.length} active
+                      </span>
+                    </div>
+                    {renderModeRows(extendedRows)}
+                  </div>
                 )}
                 {otherRows.length > 0 && (
                   <details className="channel-other-modes" open={!canEditModes}>
@@ -661,39 +891,31 @@ export const ChannelModal: React.FC<ChannelModalProps> = ({
                         <span className="ml-2 text-[var(--fg-muted)]">+{otherSetLetters}</span>
                       )}
                     </summary>
-                    {otherParams.length > 0 && (
-                      <ul className="channel-modes">
-                        {otherParams.map((row: ModeRow) => (
-                          <li key={row.letter} className="channel-mode-row">
-                            <ChannelModeRow
-                              row={row}
-                              state={shown(row.letter)}
-                              disabled={!canEditModes}
-                              revealed={keyRevealed}
-                              canReveal={!!storedKey && live.modes.includes('k')}
-                              onToggle={(on) => setOn(row.letter, on)}
-                              onValue={(val) => setValue(row.letter, val)}
-                              onReveal={() => setKeyRevealed((v) => !v)}
-                            />
-                          </li>
-                        ))}
-                      </ul>
-                    )}
+                    {otherParams.length > 0 && renderModeRows(otherParams)}
                     {otherFlags.length > 0 && (
                       <ul className="channel-modes bare">
-                        {otherFlags.map((row: ModeRow) => (
-                          <li key={row.letter}>
-                            <label className="channel-mode-toggle">
-                              <input
-                                type="checkbox"
-                                checked={shown(row.letter).on}
-                                disabled={!canEditModes}
-                                onChange={(e) => setOn(row.letter, e.target.checked)}
-                              />
-                              <span>+{row.letter}</span>
-                            </label>
-                          </li>
-                        ))}
+                        {otherFlags.map((row: ModeRow) => {
+                          const rowState = shown(row.letter);
+                          return (
+                            <li
+                              key={row.letter}
+                              className="channel-flag-chip"
+                              data-active={rowState.on ? 'true' : 'false'}
+                              title={`+${row.letter}: ${row.description}`}
+                            >
+                              <label className="channel-mode-toggle">
+                                <input
+                                  type="checkbox"
+                                  checked={rowState.on}
+                                  disabled={!canEditModes}
+                                  onChange={(e) => setOn(row.letter, e.target.checked)}
+                                />
+                                <span className="channel-mode-tag">+{row.letter}</span>
+                                <span className="channel-flag-desc">Unrecognized mode</span>
+                              </label>
+                            </li>
+                          );
+                        })}
                       </ul>
                     )}
                   </details>
@@ -716,6 +938,7 @@ export const ChannelModal: React.FC<ChannelModalProps> = ({
                   key={rung.id}
                   type="button"
                   aria-pressed={activeRung === rung.id}
+                  title={rung.hint}
                   onClick={() => setChannelNotifyRung(networkId, canonicalTarget, rung.id)}
                 >
                   {rung.label}
@@ -740,13 +963,51 @@ export const ChannelModal: React.FC<ChannelModalProps> = ({
         </form>
       ) : (
         <div className="space-y-3">
+          <div className="channel-list-banner">
+            <div className="channel-list-banner-head">
+              <div className="flex items-center gap-2">
+                <span className="channel-mode-tag">+{activeListMeta.letter}</span>
+                <strong className="text-xs">{activeListMeta.label}</strong>
+              </div>
+              {activeListMeta.maxEntries != null && (
+                <span className="channel-info-pill">
+                  Max {activeListMeta.maxEntries} entries
+                </span>
+              )}
+            </div>
+            <p className="m-0 text-xs text-[var(--fg-muted)]">{activeListMeta.description}</p>
+            {activeListMeta.extbanHints.length > 0 && (
+              <div className="channel-extban-hints">
+                <span className="text-[11px] text-[var(--fg-muted)]">Extended masks:</span>
+                {activeListMeta.extbanHints.map((hint) => (
+                  <button
+                    key={hint.prefix}
+                    type="button"
+                    className="channel-extban-chip"
+                    disabled={!canEditModes}
+                    title={`${hint.label} — e.g. ${hint.example}`}
+                    onClick={() => {
+                      if (!canEditModes) return;
+                      setNewMask(hint.prefix);
+                      maskInputRef.current?.focus();
+                    }}
+                  >
+                    <code>{hint.prefix}</code>
+                    <span>{hint.label}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
           {canEditModes && (
             <form onSubmit={(e) => void handleAddEntry(e)} className="flex gap-2">
               <input
+                ref={maskInputRef}
                 type="text"
                 value={newMask}
                 onChange={(e) => setNewMask(e.target.value)}
-                placeholder="nick!user@host"
+                placeholder={activeListMeta.maskPlaceholder}
                 aria-label={`Add to ${activeTabInfo?.label || activeTab}`}
                 autoComplete="off"
                 autoCapitalize="off"

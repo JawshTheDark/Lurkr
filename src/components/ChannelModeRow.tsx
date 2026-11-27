@@ -26,16 +26,43 @@ export const ChannelModeRow: React.FC<ChannelModeRowProps> = ({
   onValue,
   onReveal,
 }) => {
+  const placeholder =
+    row.kind === 'key' && state.on ? 'Key is set' : row.placeholder ?? '';
+  const scopeLabel =
+    row.scope === 'oper'
+      ? 'Oper'
+      : row.scope === 'services'
+        ? 'Services'
+        : row.scope === 'server'
+          ? 'Server'
+          : null;
+
   return (
     <>
-      <label className="channel-mode-toggle">
+      <label
+        className="channel-mode-toggle"
+        title={`+${row.letter} — ${row.name ?? 'Custom mode'}: ${row.description}`}
+      >
         <input
           type="checkbox"
           checked={state.on}
           disabled={disabled}
           onChange={(e) => onToggle(e.target.checked)}
         />
-        <span className="truncate">{row.name ?? `+${row.letter}`}</span>
+        <span className="channel-mode-copy">
+          <span className="channel-mode-title-line">
+            <span className="channel-mode-name">{row.name ?? `Mode +${row.letter}`}</span>
+            {scopeLabel && (
+              <span className={`channel-mode-scope scope-${row.scope}`}>{scopeLabel}</span>
+            )}
+          </span>
+          {row.description && (
+            <span className="channel-mode-desc">
+              {row.description}
+              {row.hint && (row.kind !== 'key' || !state.on) ? ` (${row.hint})` : ''}
+            </span>
+          )}
+        </span>
       </label>
       {row.kind !== 'flag' && (
         <>
@@ -43,7 +70,7 @@ export const ChannelModeRow: React.FC<ChannelModeRowProps> = ({
             className="channel-mode-param"
             type={row.kind === 'key' && !revealed ? 'password' : 'text'}
             value={state.value}
-            placeholder={row.kind === 'key' && state.on ? 'Key is set' : ''}
+            placeholder={placeholder}
             disabled={disabled || !state.on}
             aria-label={`+${row.letter} value`}
             autoComplete="off"
@@ -66,7 +93,7 @@ export const ChannelModeRow: React.FC<ChannelModeRowProps> = ({
           </span>
         </>
       )}
-      <span className="channel-mode-tag">{row.name ? `+${row.letter}` : ''}</span>
+      <span className="channel-mode-tag">+{row.letter}</span>
     </>
   );
 };
