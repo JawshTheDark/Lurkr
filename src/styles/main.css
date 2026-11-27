@@ -1059,3 +1059,19 @@ button.channel-icon-btn:hover:not(:disabled) {
   border-color: transparent;
   color: var(--accent);
 }
+
+/* StatusBar jump-to-unread control matching upstream Lurker */
+button.seg-jump-unread {
+  background: none;
+  border: none;
+  color: var(--warn);
+  font: inherit;
+  font-weight: 600;
+  padding: 0 2px;
+  cursor: pointer;
+}
+
+button.seg-jump-unread:hover:not(:disabled) {
+  border-color: transparent;
+  color: var(--fg);
+}

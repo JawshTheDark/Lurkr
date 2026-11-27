@@ -39,6 +39,7 @@ import { useWhoisStore } from './whois';
 import { useDesktopUiStore } from './desktopUi';
 import { useAliasesStore } from './aliases';
 import { useE2eChannelsStore } from './e2eChannels';
+import { useScrollStateStore } from './scrollState';
 
 let registered = false;
 
@@ -81,6 +82,7 @@ export function registerAllSessionResets(): void {
     useDesktopUiStore.getState().reset();
     useAliasesStore.getState().reset();
     useE2eChannelsStore.getState().reset();
+    useScrollStateStore.getState().reset();
     clearPreviewCache();
     resetPendingJump();
   });

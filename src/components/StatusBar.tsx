@@ -8,6 +8,7 @@ import { useOperStore } from '../stores/oper';
 import { useUploadsStore } from '../stores/uploads';
 import { useSocketConnected } from '../services/socket';
 import { useAuthStore } from '../stores/auth';
+import { useScrollStateStore } from '../stores/scrollState';
 
 interface StatusBarProps {
   onOpenUploads?: () => void;
@@ -26,6 +27,7 @@ export const StatusBar: React.FC<StatusBarProps> = ({ onOpenUploads }) => {
   const failedAt = useUploadsStore((s) => s.failedAt);
   const failedMessage = useUploadsStore((s) => s.failedMessage);
   const isPaused = useAuthStore((s) => s.isPaused());
+  const unreadAnchor = useScrollStateStore((s) => s.unreadAnchor);
 
   const netState = activeBuffer ? states[activeBuffer.networkId] : null;
   const isOper = isNetworkOper(netState);
@@ -166,6 +168,17 @@ export const StatusBar: React.FC<StatusBarProps> = ({ onOpenUploads }) => {
             {typeof lagMs === 'number' && <span>{lagMs}ms</span>}
             {sendQueue > 0 && <span style={{ color: 'var(--warn)' }}>Queue: {sendQueue}</span>}
           </>
+        )}
+        {activeBuffer && unreadAnchor && (
+          <button
+            type="button"
+            className="seg-jump-unread"
+            data-testid="statusbar-jump-unread"
+            title="Jump to unread messages"
+            onClick={() => useScrollStateStore.getState().requestScrollToUnread()}
+          >
+            {unreadAnchor === 'down' ? 'Unread ↓' : 'Unread ↑'}
+          </button>
         )}
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>{renderUploadStatus()}</div>

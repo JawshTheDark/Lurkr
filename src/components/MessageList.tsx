@@ -4,6 +4,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowDown,
+  ArrowUp,
   Bookmark,
   Copy,
   MessageSquare,
@@ -11,6 +12,7 @@ import {
   SmilePlus,
   Trash2,
   Upload,
+  X,
 } from 'lucide-react';
 import { useBuffersStore, historyCountBy, type Buffer, type BufferMessage } from '../stores/buffers';
 import { useNetworksStore, tagSupport } from '../stores/networks';
@@ -26,12 +28,14 @@ import { useAuthStore } from '../stores/auth';
 import { useRelayBotsStore } from '../stores/relayBots';
 import { useWhoisStore } from '../stores/whois';
 import { useDesktopUiStore } from '../stores/desktopUi';
+import { useScrollStateStore } from '../stores/scrollState';
 import { socketSend } from '../services/socketBus';
 import { formatTimestamp, formatDate } from '../utils/timestamp';
 import { resolveThemedNickColor } from '../lib/nickTheme';
 import { buildIgnoreSubmenuItem } from '../lib/ignoreMenu';
 import { jumpToMessage } from '../lib/jumpToMessage';
 import { hiddenAsThreadReply } from '../lib/threadHide';
+import { setUnreadDividerShown } from '../lib/unreadDivider';
 import { replyExcerpt, stripReplyAddress } from '../utils/replyText';
 import { isChannelTarget } from '../shared/channels';
 import { currentLayoutValue } from '../shared/settingsRenames';
@@ -56,11 +60,18 @@ export const MessageList: React.FC<MessageListProps> = ({ buffer, onOpenReaction
   const holdCancelRef = useRef<(() => void) | null>(null);
   const glowTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const handledJumpNonceRef = useRef<number>(0);
+  const unreadDividerRef = useRef<HTMLDivElement | null>(null);
+  const unreadSeenRef = useRef(false);
+  const unreadDismissedRef = useRef(false);
+  const unreadLoadUnsubRef = useRef<(() => void) | null>(null);
   const [showJumpBottom, setShowJumpBottom] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const [glowTarget, setGlowTarget] = useState<{ messageId: number; nonce: number } | null>(null);
 
   const pendingJump = useDesktopUiStore((s) => s.pendingMessageJump);
+  const unreadAnchor = useScrollStateStore((s) => s.unreadAnchor);
+  const scrollToUnreadNonce = useScrollStateStore((s) => s.scrollToUnreadNonce);
+  const handledUnreadNonceRef = useRef<number>(scrollToUnreadNonce);
 
   const settingsValues = useSettingsStore((s) => s.values);
   const reactionsByMsg = useReactionsStore((s) => s.byMessage);
@@ -320,12 +331,210 @@ export const MessageList: React.FC<MessageListProps> = ({ buffer, onOpenReaction
     threadsEnabled,
   ]);
 
+  const dividerAfterId = buffer.dividerAfterId ?? 0;
+  const unreadDividerBeforeIdx = useMemo(() => {
+    if (dividerAfterId <= 0) return -1;
+    return visibleMessages.findIndex((m) => m.id != null && Number(m.id) > dividerAfterId);
+  }, [visibleMessages, dividerAfterId]);
+  const hasUnreadDivider = unreadDividerBeforeIdx !== -1;
+
+  const bufKeyStr =
+    buffer.networkId == null ? buffer.target : `${buffer.networkId}::${buffer.target}`;
+
+  const evaluateUnreadVisibility = () => {
+    const setAnchor = useScrollStateStore.getState().setUnreadAnchor;
+    const divider = unreadDividerRef.current;
+    const scroller = scrollRef.current;
+    if (!hasUnreadDivider || !divider || !scroller || unreadSeenRef.current || unreadDismissedRef.current) {
+      setAnchor(null);
+      return;
+    }
+    const dividerPinnedToTop =
+      dividerAfterId > 0 &&
+      buffer.oldestId != null &&
+      buffer.oldestId > dividerAfterId &&
+      buffer.hasMoreOlder;
+    if (dividerPinnedToTop) {
+      setAnchor('up');
+      return;
+    }
+    const er = scroller.getBoundingClientRect();
+    const dr = divider.getBoundingClientRect();
+    if (er.height > 0 && dr.height > 0) {
+      if (dr.bottom > er.top && dr.top < er.bottom) {
+        unreadSeenRef.current = true;
+        setAnchor(null);
+        return;
+      }
+      setAnchor(dr.top < er.top ? 'up' : 'down');
+      return;
+    }
+    if (scroller.clientHeight > 0 && scroller.scrollHeight > scroller.clientHeight) {
+      const top = divider.offsetTop;
+      const bottom = top + (divider.offsetHeight || 1);
+      const viewTop = scroller.scrollTop;
+      const viewBottom = viewTop + scroller.clientHeight;
+      if (bottom > viewTop && top < viewBottom) {
+        unreadSeenRef.current = true;
+        setAnchor(null);
+        return;
+      }
+      setAnchor(top < viewTop ? 'up' : 'down');
+    }
+  };
+
+  useEffect(() => {
+    setUnreadDividerShown(bufKeyStr, hasUnreadDivider);
+    return () => {
+      setUnreadDividerShown(bufKeyStr, null);
+    };
+  }, [bufKeyStr, hasUnreadDivider]);
+
+  useEffect(() => {
+    unreadSeenRef.current = false;
+    unreadDismissedRef.current = false;
+    unreadLoadUnsubRef.current?.();
+    unreadLoadUnsubRef.current = null;
+    useScrollStateStore.getState().setUnreadAnchor(null);
+  }, [buffer.networkId, buffer.target, dividerAfterId]);
+
+  useEffect(() => {
+    return () => {
+      unreadLoadUnsubRef.current?.();
+      unreadLoadUnsubRef.current = null;
+      useScrollStateStore.getState().setUnreadAnchor(null);
+    };
+  }, []);
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    const divider = unreadDividerRef.current;
+    evaluateUnreadVisibility();
+    if (!el || !divider || !hasUnreadDivider || typeof IntersectionObserver === 'undefined') {
+      return;
+    }
+    const dividerPinnedToTop =
+      dividerAfterId > 0 &&
+      buffer.oldestId != null &&
+      buffer.oldestId > dividerAfterId &&
+      buffer.hasMoreOlder;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const entry = entries.find((e) => e.isIntersecting) ?? entries[entries.length - 1];
+        if (!entry) return;
+        if (entry.isIntersecting && !dividerPinnedToTop) {
+          unreadSeenRef.current = true;
+          useScrollStateStore.getState().setUnreadAnchor(null);
+          return;
+        }
+        if (unreadSeenRef.current || unreadDismissedRef.current) {
+          useScrollStateStore.getState().setUnreadAnchor(null);
+          return;
+        }
+        if (dividerPinnedToTop) {
+          useScrollStateStore.getState().setUnreadAnchor('up');
+          return;
+        }
+        const top = entry.boundingClientRect.top;
+        const rootTop = entry.rootBounds?.top ?? el.getBoundingClientRect().top ?? 0;
+        useScrollStateStore.getState().setUnreadAnchor(top < rootTop ? 'up' : 'down');
+      },
+      { root: el, threshold: 0 },
+    );
+    observer.observe(divider);
+    return () => observer.disconnect();
+  }, [
+    hasUnreadDivider,
+    unreadDividerBeforeIdx,
+    visibleMessages.length,
+    buffer.networkId,
+    buffer.target,
+    dividerAfterId,
+    buffer.oldestId,
+    buffer.hasMoreOlder,
+  ]);
+
+  useEffect(() => {
+    if (scrollToUnreadNonce === 0 || handledUnreadNonceRef.current === scrollToUnreadNonce) return;
+    handledUnreadNonceRef.current = scrollToUnreadNonce;
+    const scroller = scrollRef.current;
+    if (!scroller) return;
+
+    const scrollDividerIntoView = () => {
+      const divider = unreadDividerRef.current;
+      if (!divider) return;
+      atBottomRef.current = false;
+      if (typeof divider.scrollIntoView === 'function') {
+        divider.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      } else {
+        scroller.scrollTop = Math.max(
+          0,
+          divider.offsetTop - Math.floor(scroller.clientHeight / 2),
+        );
+      }
+      const distFromBottom = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight;
+      setShowJumpBottom(distFromBottom > 160 || buffer.detached);
+      unreadSeenRef.current = true;
+      useScrollStateStore.getState().setUnreadAnchor(null);
+    };
+
+    const dividerPinnedToTop =
+      dividerAfterId > 0 &&
+      buffer.networkId != null &&
+      buffer.oldestId != null &&
+      buffer.oldestId > dividerAfterId &&
+      buffer.hasMoreOlder &&
+      !buffer.loadingHistory;
+
+    if (dividerPinnedToTop) {
+      atBottomRef.current = false;
+      unreadLoadUnsubRef.current?.();
+      const targetNetId = buffer.networkId;
+      const targetName = buffer.target;
+      const token = useBuffersStore.getState().loadAround(targetNetId, targetName, dividerAfterId);
+      if (token == null) {
+        scrollDividerIntoView();
+        return;
+      }
+      const wantKey = targetNetId == null ? targetName : `${targetNetId}::${targetName}`;
+      const onSettled = (): boolean => {
+        const curBuf = useBuffersStore.getState().findByTarget(targetNetId, targetName);
+        if (curBuf?.pendingHistoryToken === token) return false;
+        unreadLoadUnsubRef.current?.();
+        unreadLoadUnsubRef.current = null;
+        if (!curBuf || curBuf.pendingHistoryToken != null) return true;
+        const activeNow = useNetworksStore.getState().activeKey;
+        if (activeNow && activeNow.toLowerCase() !== wantKey.toLowerCase()) return true;
+        requestAnimationFrame(() => scrollDividerIntoView());
+        return true;
+      };
+      if (!onSettled()) {
+        unreadLoadUnsubRef.current = useBuffersStore.subscribe(() => {
+          onSettled();
+        });
+      }
+      return;
+    }
+
+    scrollDividerIntoView();
+  }, [
+    scrollToUnreadNonce,
+    dividerAfterId,
+    buffer.networkId,
+    buffer.target,
+    buffer.oldestId,
+    buffer.hasMoreOlder,
+    buffer.loadingHistory,
+    buffer.detached,
+  ]);
+
   const handleScroll = () => {
     const el = scrollRef.current;
     if (!el) return;
     const distFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
     atBottomRef.current = distFromBottom < 48;
     setShowJumpBottom(distFromBottom > 160 || buffer.detached);
+    evaluateUnreadVisibility();
 
     if (el.scrollTop < 120 && buffer.hasMoreOlder && !buffer.loadingHistory && buffer.oldestId != null) {
       useBuffersStore.getState().setLoadingHistory(buffer.networkId, buffer.target, true);
@@ -392,9 +601,6 @@ export const MessageList: React.FC<MessageListProps> = ({ buffer, onOpenReaction
     }
   };
 
-  const bufKeyStr =
-    buffer.networkId == null ? buffer.target : `${buffer.networkId}::${buffer.target}`;
-
   const renderMessageText = (m: BufferMessage) => {
     const text = String((m as any).text ?? m.body ?? '');
     if (m.type === 'join') return `${m.nick} joined ${buffer.target}`;
@@ -456,8 +662,7 @@ export const MessageList: React.FC<MessageListProps> = ({ buffer, onOpenReaction
           const showDay = day && day !== lastDay;
           if (day) lastDay = day;
 
-          const showUnread =
-            buffer.dividerAfterId != null && m.id != null && m.id === buffer.dividerAfterId && idx < visibleMessages.length - 1;
+          const isUnreadBoundary = idx === unreadDividerBeforeIdx;
 
           const redaction = useRedactionsStore.getState().get(m as any);
           void redactionsByMsg;
@@ -507,6 +712,26 @@ export const MessageList: React.FC<MessageListProps> = ({ buffer, onOpenReaction
 
           return (
             <React.Fragment key={m.id ?? `local-${idx}`}>
+              {isUnreadBoundary && (
+                <div
+                  ref={unreadDividerRef}
+                  className="unread-divider"
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    margin: '6px 0',
+                    color: 'var(--bad)',
+                    fontSize: '0.75em',
+                    fontWeight: 600,
+                  }}
+                >
+                  <div style={{ flex: 1, height: '1px', background: 'var(--bad)' }} />
+                  <span>New messages</span>
+                  <div style={{ flex: 1, height: '1px', background: 'var(--bad)' }} />
+                </div>
+              )}
+
               {showDay && (
                 <div
                   style={{
@@ -861,24 +1086,6 @@ export const MessageList: React.FC<MessageListProps> = ({ buffer, onOpenReaction
                   );
                 })()}
               </div>
-
-              {showUnread && (
-                <div
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '8px',
-                    margin: '6px 0',
-                    color: 'var(--bad)',
-                    fontSize: '0.75em',
-                    fontWeight: 600,
-                  }}
-                >
-                  <div style={{ flex: 1, height: '1px', background: 'var(--bad)' }} />
-                  <span>New messages</span>
-                  <div style={{ flex: 1, height: '1px', background: 'var(--bad)' }} />
-                </div>
-              )}
             </React.Fragment>
           );
         })}
@@ -990,6 +1197,67 @@ export const MessageList: React.FC<MessageListProps> = ({ buffer, onOpenReaction
           return items;
         })()}
       />
+
+      {unreadAnchor && (
+        <div
+          data-testid="jump-unread-pill"
+          style={{
+            position: 'absolute',
+            top: '12px',
+            right: '18px',
+            zIndex: 10,
+            display: 'inline-flex',
+            alignItems: 'center',
+            borderRadius: '16px',
+            border: '1px solid var(--warn)',
+            background: 'var(--bg-soft)',
+            color: 'var(--warn)',
+            boxShadow: '0 4px 16px rgba(0,0,0,0.4)',
+            overflow: 'hidden',
+          }}
+        >
+          <button
+            type="button"
+            onClick={() => useScrollStateStore.getState().requestScrollToUnread()}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '6px',
+              padding: '6px 10px 6px 12px',
+              border: 'none',
+              background: 'transparent',
+              color: 'var(--warn)',
+              fontWeight: 600,
+              fontSize: '0.82em',
+              cursor: 'pointer',
+            }}
+          >
+            {unreadAnchor === 'down' ? <ArrowDown size={14} /> : <ArrowUp size={14} />}
+            <span>Jump to unread</span>
+          </button>
+          <button
+            type="button"
+            title="Dismiss"
+            aria-label="Dismiss jump to unread"
+            onClick={() => {
+              unreadDismissedRef.current = true;
+              useScrollStateStore.getState().setUnreadAnchor(null);
+            }}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              padding: '6px 10px 6px 4px',
+              border: 'none',
+              borderLeft: '1px solid color-mix(in srgb, var(--warn) 30%, transparent)',
+              background: 'transparent',
+              color: 'var(--fg-muted)',
+              cursor: 'pointer',
+            }}
+          >
+            <X size={13} />
+          </button>
+        </div>
+      )}
 
       {showJumpBottom && (
         <button
