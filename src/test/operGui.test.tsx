@@ -127,7 +127,14 @@ describe('Oper GUI', () => {
     act(() => {
       root!.render(React.createElement(OperToolbar, { networkId: 1, target: '#opers', netState: operState }));
     });
-    expect(container.querySelector('[data-testid="oper-toolbar"]')).not.toBeNull();
+    const toolbar = container.querySelector('[data-testid="oper-toolbar"]') as HTMLElement | null;
+    expect(toolbar).not.toBeNull();
+    expect(toolbar!.className).toContain('oper-toolbar');
+    expect(toolbar!.className).not.toContain('flex-wrap');
+    const actionsRow = toolbar!.querySelector('.oper-toolbar-actions') as HTMLElement | null;
+    expect(actionsRow).not.toBeNull();
+    expect(actionsRow!.className).not.toContain('flex-wrap');
+    expect(toolbar!.querySelectorAll('button.oper-toolbar-btn').length).toBeGreaterThanOrEqual(7);
     expect(container.textContent).toContain('OPER');
     expect(container.textContent).toContain('UnrealIRCd');
     expect(container.textContent).toContain('Bans / TKL');

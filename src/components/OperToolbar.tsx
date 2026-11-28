@@ -101,15 +101,11 @@ const OperDropdown: React.FC<OperDropdownProps> = ({
         aria-haspopup="menu"
         aria-expanded={isOpen}
         onClick={onToggle}
-        className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] font-medium transition-colors ${
-          isOpen
-            ? 'border-[var(--accent)] bg-[var(--accent)]/15 text-[var(--text-primary)]'
-            : 'border-[var(--border)] bg-[var(--bg-primary)] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]'
-        }`}
+        className={`oper-toolbar-btn${isOpen ? ' is-open' : ''}`}
       >
         {icon}
         <span>{label}</span>
-        <ChevronDown className="w-3 h-3 opacity-70" />
+        <ChevronDown className="oper-toolbar-chevron" />
       </button>
 
       {isOpen && (
@@ -419,25 +415,25 @@ export const OperToolbar: React.FC<OperToolbarProps> = ({ networkId, target, net
   return (
     <div
       data-testid="oper-toolbar"
-      className="shrink-0 border-b border-[var(--border)] bg-[var(--bg-secondary)]/80 px-3 py-1.5 flex items-center justify-between gap-2 flex-wrap"
+      className="oper-toolbar shrink-0 border-b border-[var(--border)] bg-[var(--bg-secondary)]/80"
     >
-      <div className="flex items-center gap-1.5 flex-wrap">
+      <div className="oper-toolbar-actions">
         <button
           type="button"
           onClick={() => openModal({ tab: 'auth', networkId: nid })}
           title={`IRC Operator active (+${modes}) — ${dialectBadge}`}
-          className="inline-flex items-center gap-1 rounded-md border border-amber-500/40 bg-amber-500/15 px-2 py-0.5 text-[11px] font-semibold text-amber-300 hover:bg-amber-500/25"
+          className="oper-toolbar-btn oper-toolbar-badge border-amber-500/40 bg-amber-500/15 font-semibold text-amber-300 hover:bg-amber-500/25"
         >
-          <Shield className="w-3 h-3" />
+          <Shield className="oper-toolbar-icon" />
           <span>OPER</span>
-          <span className="font-mono opacity-80">(+{modes})</span>
-          <span className="text-[10px] opacity-75">· {dialectBadge}</span>
+          <span className="oper-toolbar-modes font-mono opacity-80">(+{modes})</span>
+          <span className="oper-toolbar-dialect opacity-75">· {dialectBadge}</span>
         </button>
 
         {bansItems.length > 0 && (
           <OperDropdown
             label={ctx.profile.ircd === 'ergo' ? 'Bans' : 'Bans / TKL'}
-            icon={<ShieldBan className="w-3.5 h-3.5 text-[var(--bad)]" />}
+            icon={<ShieldBan className="oper-toolbar-icon text-[var(--bad)]" />}
             items={bansItems}
             isOpen={openMenu === 'bans'}
             onToggle={() => toggleMenu('bans')}
@@ -448,7 +444,7 @@ export const OperToolbar: React.FC<OperToolbarProps> = ({ networkId, target, net
         {userItems.length > 0 && (
           <OperDropdown
             label="Users / SA*"
-            icon={<UserCog className="w-3.5 h-3.5 text-[var(--accent)]" />}
+            icon={<UserCog className="oper-toolbar-icon text-[var(--accent)]" />}
             items={userItems}
             isOpen={openMenu === 'users'}
             onToggle={() => toggleMenu('users')}
@@ -459,7 +455,7 @@ export const OperToolbar: React.FC<OperToolbarProps> = ({ networkId, target, net
         {servicesItems.length > 0 && (
           <OperDropdown
             label="Services"
-            icon={<Bot className="w-3.5 h-3.5 text-[var(--good)]" />}
+            icon={<Bot className="oper-toolbar-icon text-[var(--good)]" />}
             items={servicesItems}
             isOpen={openMenu === 'services'}
             onToggle={() => toggleMenu('services')}
@@ -470,7 +466,7 @@ export const OperToolbar: React.FC<OperToolbarProps> = ({ networkId, target, net
         {serverItems.length > 0 && (
           <OperDropdown
             label="Server"
-            icon={<Server className="w-3.5 h-3.5 text-[var(--warn)]" />}
+            icon={<Server className="oper-toolbar-icon text-[var(--warn)]" />}
             items={serverItems}
             isOpen={openMenu === 'server'}
             onToggle={() => toggleMenu('server')}
@@ -482,9 +478,9 @@ export const OperToolbar: React.FC<OperToolbarProps> = ({ networkId, target, net
           <button
             type="button"
             onClick={() => openModal({ tab: 'broadcast', networkId: nid })}
-            className="inline-flex items-center gap-1 rounded-md border border-[var(--border)] bg-[var(--bg-primary)] px-2 py-1 text-[11px] font-medium text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+            className="oper-toolbar-btn"
           >
-            <Megaphone className="w-3.5 h-3.5 text-amber-400" />
+            <Megaphone className="oper-toolbar-icon text-amber-400" />
             <span>Broadcast</span>
           </button>
         )}
@@ -498,9 +494,9 @@ export const OperToolbar: React.FC<OperToolbarProps> = ({ networkId, target, net
               targetChannel: chCtx,
             })
           }
-          className="inline-flex items-center gap-1 rounded-md border border-[var(--border)] bg-[var(--bg-primary)] px-2 py-1 text-[11px] font-medium text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+          className="oper-toolbar-btn"
         >
-          <Terminal className="w-3.5 h-3.5 text-[var(--accent)]" />
+          <Terminal className="oper-toolbar-icon text-[var(--accent)]" />
           <span>Oper Console</span>
         </button>
       </div>
@@ -510,9 +506,9 @@ export const OperToolbar: React.FC<OperToolbarProps> = ({ networkId, target, net
           type="button"
           title="Drop IRC Operator status (MODE -o)"
           onClick={() => void executeOperRaw(nid, `MODE ${ownNick} -o`, 'Dropped IRC Operator (-o)')}
-          className="inline-flex items-center gap-1 rounded-md border border-[var(--border)] px-2 py-1 text-[11px] text-[var(--text-muted)] hover:border-red-500/40 hover:bg-red-500/10 hover:text-red-400"
+          className="oper-toolbar-btn oper-toolbar-deoper hover:border-red-500/40 hover:bg-red-500/10 hover:text-red-400"
         >
-          <LogOut className="w-3 h-3" />
+          <LogOut className="oper-toolbar-icon" />
           <span>De-Oper</span>
         </button>
       )}
