@@ -23,6 +23,7 @@ import {
   DEFAULT_MENU_STATE,
   type DesktopMenuState,
 } from './menu.js';
+import { resolveAppIconPath, shouldSetMacDockIcon } from './appIcon.js';
 import { transcodeWebmFile, type TranscodeWebmRequest } from './transcode.js';
 import { EncryptedPreviewCache } from './previewCache.js';
 import { DesktopUpdater } from './updater.js';
@@ -104,26 +105,13 @@ function isAppNavigationUrl(rawUrl: string): boolean {
 }
 
 function resolveAppIcon(): string | undefined {
-  const unpackedDirs = process.resourcesPath
-    ? [
-        path.join(process.resourcesPath, `app-${process.arch}.asar.unpacked`, 'dist'),
-        path.join(process.resourcesPath, 'app.asar.unpacked', 'dist'),
-      ]
-    : [];
-  const prodDist = path.join(__dirname, '../dist');
-  const devPublic = path.join(__dirname, '../public');
-  const names =
-    process.platform === 'win32'
-      ? ['lurker-icon.ico', 'lurker-icon-512.png']
-      : ['lurker-icon-512.png'];
-
-  for (const name of names) {
-    for (const dir of [...unpackedDirs, prodDist, devPublic]) {
-      const candidate = path.join(dir, name);
-      if (fs.existsSync(candidate)) return candidate;
-    }
-  }
-  return undefined;
+  return resolveAppIconPath({
+    platform: process.platform,
+    isPackaged: app.isPackaged,
+    baseDir: __dirname,
+    resourcesPath: process.resourcesPath,
+    arch: process.arch,
+  });
 }
 
 let cachedUnreadOverlay: Electron.NativeImage | null = null;
@@ -776,7 +764,7 @@ app.whenReady().then(() => {
   });
 
   rebuildApplicationMenu();
-  if (process.platform === 'darwin') {
+  if (shouldSetMacDockIcon(process.platform, app.isPackaged)) {
     try {
       const dockIcon = resolveAppIcon();
       if (dockIcon) app.dock?.setIcon(dockIcon);
