@@ -129,12 +129,36 @@ describe('Oper GUI', () => {
     });
     const toolbar = container.querySelector('[data-testid="oper-toolbar"]') as HTMLElement | null;
     expect(toolbar).not.toBeNull();
-    expect(toolbar!.className).toContain('oper-toolbar');
     expect(toolbar!.className).not.toContain('flex-wrap');
-    const actionsRow = toolbar!.querySelector('.oper-toolbar-actions') as HTMLElement | null;
-    expect(actionsRow).not.toBeNull();
-    expect(actionsRow!.className).not.toContain('flex-wrap');
-    expect(toolbar!.querySelectorAll('button.oper-toolbar-btn').length).toBeGreaterThanOrEqual(7);
+    const track = container.querySelector('[data-testid="oper-toolbar-track"]') as HTMLElement | null;
+    expect(track).not.toBeNull();
+    expect(track!.className).not.toContain('flex-wrap');
+    expect(track!.className).toContain('flex-nowrap');
+    expect(toolbar!.querySelectorAll('button').length).toBeGreaterThanOrEqual(7);
+
+    // Proportional shrinking & re-growing according to container width without overlap or wrapping
+    let mockOuterWidth = 500;
+    const actionsRow = track!.firstElementChild as HTMLElement;
+    const deoperBtnEl = findButtonByText(container, 'De-Oper')!;
+    Object.defineProperty(toolbar!, 'clientWidth', { configurable: true, get: () => mockOuterWidth });
+    Object.defineProperty(actionsRow, 'offsetWidth', { configurable: true, get: () => 868 });
+    Object.defineProperty(deoperBtnEl, 'offsetWidth', { configurable: true, get: () => 100 });
+    Object.defineProperty(track!, 'offsetHeight', { configurable: true, get: () => 40 });
+
+    act(() => {
+      window.dispatchEvent(new Event('resize'));
+    });
+    expect(track!.style.width).toBe('1000px');
+    expect(track!.style.transform).toBe('scale(0.5)');
+    expect(toolbar!.style.height).toBe('20px');
+
+    mockOuterWidth = 1100;
+    act(() => {
+      window.dispatchEvent(new Event('resize'));
+    });
+    expect(track!.style.transform).toBe('');
+    expect(track!.style.width).toBe('');
+    expect(toolbar!.style.height).toBe('');
     expect(container.textContent).toContain('OPER');
     expect(container.textContent).toContain('UnrealIRCd');
     expect(container.textContent).toContain('Bans / TKL');

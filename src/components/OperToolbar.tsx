@@ -1,7 +1,8 @@
 // Copyright (c) 2026 Brad Root
 // SPDX-License-Identifier: MPL-2.0
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   Shield,
   ShieldBan,
@@ -101,61 +102,68 @@ const OperDropdown: React.FC<OperDropdownProps> = ({
         aria-haspopup="menu"
         aria-expanded={isOpen}
         onClick={onToggle}
-        className={`oper-toolbar-btn${isOpen ? ' is-open' : ''}`}
+        className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] font-medium transition-colors shrink-0 whitespace-nowrap ${
+          isOpen
+            ? 'border-[var(--accent)] bg-[var(--accent)]/15 text-[var(--text-primary)]'
+            : 'border-[var(--border)] bg-[var(--bg-primary)] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]'
+        }`}
       >
         {icon}
         <span>{label}</span>
-        <ChevronDown className="oper-toolbar-chevron" />
+        <ChevronDown className="w-3 h-3 opacity-70" />
       </button>
 
-      {isOpen && (
-        <div
-          ref={menuRef}
-          role="menu"
-          style={{
-            position: 'fixed',
-            left: `${pos.left}px`,
-            top: `${pos.top}px`,
-            zIndex: 1150,
-            minWidth: '230px',
-            maxHeight: '72vh',
-            overflowY: 'auto',
-          }}
-          className="rounded-lg border border-[var(--border)] bg-[var(--bg-secondary)] p-1 shadow-xl"
-        >
-          {items.map((item, idx) => {
-            if (item.divider) {
-              return <div key={`div-${idx}`} className="my-1 h-px bg-[var(--border)]" />;
-            }
-            if (item.section) {
+      {isOpen &&
+        typeof document !== 'undefined' &&
+        createPortal(
+          <div
+            ref={menuRef}
+            role="menu"
+            style={{
+              position: 'fixed',
+              left: `${pos.left}px`,
+              top: `${pos.top}px`,
+              zIndex: 1150,
+              minWidth: '230px',
+              maxHeight: '72vh',
+              overflowY: 'auto',
+            }}
+            className="rounded-lg border border-[var(--border)] bg-[var(--bg-secondary)] p-1 shadow-xl"
+          >
+            {items.map((item, idx) => {
+              if (item.divider) {
+                return <div key={`div-${idx}`} className="my-1 h-px bg-[var(--border)]" />;
+              }
+              if (item.section) {
+                return (
+                  <div
+                    key={`sec-${idx}`}
+                    className="px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)]"
+                  >
+                    {item.section}
+                  </div>
+                );
+              }
               return (
-                <div
-                  key={`sec-${idx}`}
-                  className="px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)]"
+                <button
+                  key={item.id || `${item.label}-${idx}`}
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    onClose();
+                    item.onClick?.();
+                  }}
+                  className={`block w-full rounded px-2.5 py-1.5 text-left text-xs transition-colors hover:bg-[var(--bg-hover)] ${
+                    item.danger ? 'text-[var(--bad)]' : 'text-[var(--text-primary)]'
+                  }`}
                 >
-                  {item.section}
-                </div>
+                  {item.label}
+                </button>
               );
-            }
-            return (
-              <button
-                key={item.id || `${item.label}-${idx}`}
-                type="button"
-                role="menuitem"
-                onClick={() => {
-                  onClose();
-                  item.onClick?.();
-                }}
-                className={`block w-full rounded px-2.5 py-1.5 text-left text-xs transition-colors hover:bg-[var(--bg-hover)] ${
-                  item.danger ? 'text-[var(--bad)]' : 'text-[var(--text-primary)]'
-                }`}
-              >
-                {item.label}
-              </button>
-            );
-          })}
-        </div>
-      )}
+            })}
+          </div>,
+          document.body,
+        )}
     </>
   );
 };
@@ -194,9 +202,70 @@ export const OperToolbar: React.FC<OperToolbarProps> = ({ networkId, target, net
     networkId != null ? s.profiles[networkId] : undefined,
   );
   const [openMenu, setOpenMenu] = useState<string | null>(null);
+  const outerRef = useRef<HTMLDivElement | null>(null);
+  const trackRef = useRef<HTMLDivElement | null>(null);
+  const actionsRef = useRef<HTMLDivElement | null>(null);
+  const deoperRef = useRef<HTMLButtonElement | null>(null);
+  const [fit, setFit] = useState<{ scale: number; naturalWidth: number; naturalHeight: number }>({
+    scale: 1,
+    naturalWidth: 0,
+    naturalHeight: 0,
+  });
 
   const isOper = isNetworkOper(netState);
-  if (!isOper || !toolbarVisible || networkId == null) {
+  const active = isOper && toolbarVisible && networkId != null;
+
+  const updateFit = useCallback(() => {
+    const outer = outerRef.current;
+    const track = trackRef.current;
+    const actions = actionsRef.current;
+    if (!outer || !track || !actions) return;
+
+    const availWidth = outer.clientWidth;
+    if (availWidth <= 0) return;
+
+    const cs = getComputedStyle(track);
+    const padX = (parseFloat(cs.paddingLeft) || 12) + (parseFloat(cs.paddingRight) || 12);
+    const gapX = parseFloat(cs.columnGap || cs.gap) || 8;
+    const deoperW = deoperRef.current ? deoperRef.current.offsetWidth + gapX : 0;
+    const naturalWidth = Math.ceil(actions.offsetWidth + deoperW + padX);
+    const naturalHeight = Math.ceil(track.offsetHeight);
+    if (naturalWidth <= 0 || naturalHeight <= 0) return;
+
+    const nextScale = availWidth < naturalWidth ? Math.max(0.35, availWidth / naturalWidth) : 1;
+    setFit((prev) => {
+      if (
+        Math.abs(prev.scale - nextScale) < 0.002 &&
+        prev.naturalWidth === naturalWidth &&
+        prev.naturalHeight === naturalHeight
+      ) {
+        return prev;
+      }
+      return { scale: nextScale, naturalWidth, naturalHeight };
+    });
+  }, []);
+
+  const modesKey = netState?.userModes || '';
+  const nickKey = netState?.nick || '';
+  const ircdKey = profile?.ircd || '';
+  const servicesKey = profile?.services || '';
+
+  useLayoutEffect(() => {
+    if (!active) return;
+    updateFit();
+
+    const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(() => updateFit()) : null;
+    if (ro && outerRef.current) ro.observe(outerRef.current);
+    if (ro && actionsRef.current) ro.observe(actionsRef.current);
+
+    window.addEventListener('resize', updateFit);
+    return () => {
+      ro?.disconnect();
+      window.removeEventListener('resize', updateFit);
+    };
+  }, [active, updateFit, target, modesKey, nickKey, ircdKey, servicesKey]);
+
+  if (!active) {
     return null;
   }
 
@@ -412,106 +481,126 @@ export const OperToolbar: React.FC<OperToolbarProps> = ({ networkId, target, net
       : 'Detecting';
   const showBroadcast = broadcastTypes.length > 0 || defcon.ergo || defcon.anope;
 
+  const isScaled = fit.scale < 1 && fit.naturalWidth > 0 && fit.naturalHeight > 0;
+
   return (
     <div
+      ref={outerRef}
       data-testid="oper-toolbar"
-      className="oper-toolbar shrink-0 border-b border-[var(--border)] bg-[var(--bg-secondary)]/80"
+      style={isScaled ? { height: `${Math.ceil(fit.naturalHeight * fit.scale)}px` } : undefined}
+      className="w-full min-w-0 shrink-0 overflow-hidden border-b border-[var(--border)] bg-[var(--bg-secondary)]/80"
     >
-      <div className="oper-toolbar-actions">
-        <button
-          type="button"
-          onClick={() => openModal({ tab: 'auth', networkId: nid })}
-          title={`IRC Operator active (+${modes}) — ${dialectBadge}`}
-          className="oper-toolbar-btn oper-toolbar-badge border-amber-500/40 bg-amber-500/15 font-semibold text-amber-300 hover:bg-amber-500/25"
-        >
-          <Shield className="oper-toolbar-icon" />
-          <span>OPER</span>
-          <span className="oper-toolbar-modes font-mono opacity-80">(+{modes})</span>
-          <span className="oper-toolbar-dialect opacity-75">· {dialectBadge}</span>
-        </button>
-
-        {bansItems.length > 0 && (
-          <OperDropdown
-            label={ctx.profile.ircd === 'ergo' ? 'Bans' : 'Bans / TKL'}
-            icon={<ShieldBan className="oper-toolbar-icon text-[var(--bad)]" />}
-            items={bansItems}
-            isOpen={openMenu === 'bans'}
-            onToggle={() => toggleMenu('bans')}
-            onClose={() => setOpenMenu(null)}
-          />
-        )}
-
-        {userItems.length > 0 && (
-          <OperDropdown
-            label="Users / SA*"
-            icon={<UserCog className="oper-toolbar-icon text-[var(--accent)]" />}
-            items={userItems}
-            isOpen={openMenu === 'users'}
-            onToggle={() => toggleMenu('users')}
-            onClose={() => setOpenMenu(null)}
-          />
-        )}
-
-        {servicesItems.length > 0 && (
-          <OperDropdown
-            label="Services"
-            icon={<Bot className="oper-toolbar-icon text-[var(--good)]" />}
-            items={servicesItems}
-            isOpen={openMenu === 'services'}
-            onToggle={() => toggleMenu('services')}
-            onClose={() => setOpenMenu(null)}
-          />
-        )}
-
-        {serverItems.length > 0 && (
-          <OperDropdown
-            label="Server"
-            icon={<Server className="oper-toolbar-icon text-[var(--warn)]" />}
-            items={serverItems}
-            isOpen={openMenu === 'server'}
-            onToggle={() => toggleMenu('server')}
-            onClose={() => setOpenMenu(null)}
-          />
-        )}
-
-        {showBroadcast && (
+      <div
+        ref={trackRef}
+        data-testid="oper-toolbar-track"
+        style={
+          isScaled
+            ? {
+                width: `${fit.naturalWidth}px`,
+                transform: `scale(${fit.scale})`,
+                transformOrigin: 'top left',
+              }
+            : undefined
+        }
+        className="w-full px-3 py-1.5 flex items-center justify-between gap-2 flex-nowrap"
+      >
+        <div ref={actionsRef} className="flex items-center gap-1.5 flex-nowrap shrink-0">
           <button
             type="button"
-            onClick={() => openModal({ tab: 'broadcast', networkId: nid })}
-            className="oper-toolbar-btn"
+            onClick={() => openModal({ tab: 'auth', networkId: nid })}
+            title={`IRC Operator active (+${modes}) — ${dialectBadge}`}
+            className="inline-flex items-center gap-1 rounded-md border border-amber-500/40 bg-amber-500/15 px-2 py-0.5 text-[11px] font-semibold text-amber-300 hover:bg-amber-500/25 shrink-0 whitespace-nowrap"
           >
-            <Megaphone className="oper-toolbar-icon text-amber-400" />
-            <span>Broadcast</span>
+            <Shield className="w-3 h-3 shrink-0" />
+            <span>OPER</span>
+            <span className="font-mono opacity-80">(+{modes})</span>
+            <span className="text-[10px] opacity-75">· {dialectBadge}</span>
+          </button>
+
+          {bansItems.length > 0 && (
+            <OperDropdown
+              label={ctx.profile.ircd === 'ergo' ? 'Bans' : 'Bans / TKL'}
+              icon={<ShieldBan className="w-3.5 h-3.5 text-[var(--bad)]" />}
+              items={bansItems}
+              isOpen={openMenu === 'bans'}
+              onToggle={() => toggleMenu('bans')}
+              onClose={() => setOpenMenu(null)}
+            />
+          )}
+
+          {userItems.length > 0 && (
+            <OperDropdown
+              label="Users / SA*"
+              icon={<UserCog className="w-3.5 h-3.5 text-[var(--accent)]" />}
+              items={userItems}
+              isOpen={openMenu === 'users'}
+              onToggle={() => toggleMenu('users')}
+              onClose={() => setOpenMenu(null)}
+            />
+          )}
+
+          {servicesItems.length > 0 && (
+            <OperDropdown
+              label="Services"
+              icon={<Bot className="w-3.5 h-3.5 text-[var(--good)]" />}
+              items={servicesItems}
+              isOpen={openMenu === 'services'}
+              onToggle={() => toggleMenu('services')}
+              onClose={() => setOpenMenu(null)}
+            />
+          )}
+
+          {serverItems.length > 0 && (
+            <OperDropdown
+              label="Server"
+              icon={<Server className="w-3.5 h-3.5 text-[var(--warn)]" />}
+              items={serverItems}
+              isOpen={openMenu === 'server'}
+              onToggle={() => toggleMenu('server')}
+              onClose={() => setOpenMenu(null)}
+            />
+          )}
+
+          {showBroadcast && (
+            <button
+              type="button"
+              onClick={() => openModal({ tab: 'broadcast', networkId: nid })}
+              className="inline-flex items-center gap-1 rounded-md border border-[var(--border)] bg-[var(--bg-primary)] px-2 py-1 text-[11px] font-medium text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] shrink-0 whitespace-nowrap"
+            >
+              <Megaphone className="w-3.5 h-3.5 text-amber-400" />
+              <span>Broadcast</span>
+            </button>
+          )}
+
+          <button
+            type="button"
+            onClick={() =>
+              openModal({
+                tab: bansItems.length > 0 ? 'bans' : userItems.length > 0 ? 'users' : 'server',
+                networkId: nid,
+                targetChannel: chCtx,
+              })
+            }
+            className="inline-flex items-center gap-1 rounded-md border border-[var(--border)] bg-[var(--bg-primary)] px-2 py-1 text-[11px] font-medium text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] shrink-0 whitespace-nowrap"
+          >
+            <Terminal className="w-3.5 h-3.5 text-[var(--accent)]" />
+            <span>Oper Console</span>
+          </button>
+        </div>
+
+        {ownNick && (
+          <button
+            ref={deoperRef}
+            type="button"
+            title="Drop IRC Operator status (MODE -o)"
+            onClick={() => void executeOperRaw(nid, `MODE ${ownNick} -o`, 'Dropped IRC Operator (-o)')}
+            className="inline-flex items-center gap-1 rounded-md border border-[var(--border)] px-2 py-1 text-[11px] text-[var(--text-muted)] hover:border-red-500/40 hover:bg-red-500/10 hover:text-red-400 shrink-0 whitespace-nowrap"
+          >
+            <LogOut className="w-3 h-3 shrink-0" />
+            <span>De-Oper</span>
           </button>
         )}
-
-        <button
-          type="button"
-          onClick={() =>
-            openModal({
-              tab: bansItems.length > 0 ? 'bans' : userItems.length > 0 ? 'users' : 'server',
-              networkId: nid,
-              targetChannel: chCtx,
-            })
-          }
-          className="oper-toolbar-btn"
-        >
-          <Terminal className="oper-toolbar-icon text-[var(--accent)]" />
-          <span>Oper Console</span>
-        </button>
       </div>
-
-      {ownNick && (
-        <button
-          type="button"
-          title="Drop IRC Operator status (MODE -o)"
-          onClick={() => void executeOperRaw(nid, `MODE ${ownNick} -o`, 'Dropped IRC Operator (-o)')}
-          className="oper-toolbar-btn oper-toolbar-deoper hover:border-red-500/40 hover:bg-red-500/10 hover:text-red-400"
-        >
-          <LogOut className="oper-toolbar-icon" />
-          <span>De-Oper</span>
-        </button>
-      )}
     </div>
   );
 };
